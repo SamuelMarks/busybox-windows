@@ -1,0 +1,86 @@
+name: Build and Release BusyBox Windows
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - 'v*'
+      - '1.*'
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'BusyBox tag or branch to build'
+        required: false
+        default: 'master'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout busybox-windows
+        uses: actions/checkout@v7
+
+      - name: Checkout auto-win-msvc
+        uses: actions/checkout@v7
+        with:
+          repository: SamuelMarks/auto-win-msvc
+          ref: master
+          path: auto-win-msvc
+
+      - name: Checkout busybox
+        uses: actions/checkout@v7
+        with:
+          repository: mirror/busybox
+          ref: ${{ github.event.inputs.version || 'master' }}
+          path: busybox
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        shell: cmd
+        run: |
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_SOURCE_DIR_AUTO_WIN_MSVC=auto-win-msvc -DBUSYBOX_SOURCE_DIR=busybox
+
+      - name: Build BusyBox
+        shell: cmd
+        run: |
+          cmake --build build --config Release
+
+      - name: Test BusyBox
+        shell: cmd
+        run: |
+          ctest --test-dir build -C Release --output-on-failure
+          build\Release\busybox.exe --help
+
+      - name: Install NSIS
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          $nsisPath = if (Test-Path "${env:ProgramFiles(x86)}\NSIS") { "${env:ProgramFiles(x86)}\NSIS" } else { "$env:ProgramFiles\NSIS" }
+          echo "$nsisPath" >> $env:GITHUB_PATH
+          & "$nsisPath\makensis.exe" /VERSION
+
+      - name: Package with CPack
+        shell: cmd
+        run: |
+          cd build
+          cpack -C Release -G ZIP
+          cpack -C Release -G NSIS
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: busybox-windows-packages
+          path: |
+            build/*.zip
+            build/*.exe

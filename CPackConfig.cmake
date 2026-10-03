@@ -1,0 +1,17 @@
+# CPack configuration for BusyBox Windows
+set(CPACK_PACKAGE_NAME "BusyBox")
+set(CPACK_PACKAGE_VENDOR "BusyBox")
+set(CPACK_PACKAGE_VERSION "1.39.0")
+set(CPACK_PACKAGE_VERSION_MAJOR "1")
+set(CPACK_PACKAGE_VERSION_MINOR "39")
+set(CPACK_PACKAGE_VERSION_PATCH "0")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "The Swiss Army Knife of Embedded Linux for native Windows.")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://busybox.net/")
+set(CPACK_PACKAGE_CONTACT "Samuel Marks")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "BusyBox")
+set(CPACK_GENERATOR "ZIP;NSIS")
+
+# NSIS Settings
+set(CPACK_NSIS_DISPLAY_NAME "BusyBox for Windows")
+set(CPACK_NSIS_PACKAGE_NAME "BusyBox for Windows")
+set(CPACK_NSIS_MODIFY_PATH ON)

@@ -1,0 +1,24 @@
+# Fetched Repositories
+auto-win-msvc/
+busybox/
+
+# Build and Output Directories
+build*/
+_CPack_Packages/
+*.msi
+*.zip
+
+# Test Outputs
+test_output.txt
+malloc_log.txt
+.coverage
+
+# Python
+__pycache__/
+*.py[cod]
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.suo
+*.sln

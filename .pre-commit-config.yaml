@@ -1,0 +1,27 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      # dos2unix: convert DOS/Windows (CRLF) line endings to Unix (LF)
+      - id: mixed-line-ending
+        name: dos2unix (enforce LF)
+        args: [--fix=lf]
+        exclude: '(?i)(\.(cmd|bat)$)'
+
+      # unix2dos: convert Unix (LF) line endings to DOS/Windows (CRLF) for Windows batch files
+      - id: mixed-line-ending
+        name: unix2dos (enforce CRLF)
+        args: [--fix=crlf]
+        files: '(?i)(\.(cmd|bat)$)'
+
+      # Basic file and syntax sanity checks
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+        exclude: '(?i)(\.(cmd|bat|patch|diff)$)'
+      - id: trailing-whitespace
+        exclude: '(?i)(\.(cmd|bat|patch|diff)$)'
