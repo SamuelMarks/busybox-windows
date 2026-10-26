@@ -1,0 +1,2668 @@
+diff --git a/editors/awk.c b/editors/awk.c
+index 7313649..a2acf5d 100644
+--- a/editors/awk.c
++++ b/editors/awk.c
+@@ -793,9 +793,6 @@ static void hash_rebuild(xhash *hash)
+ 	unsigned newsize, i, idx;
+ 	hash_item **newitems, *hi, *thi;
+ 
+-	if (hash->nprime == ARRAY_SIZE(PRIMES))
+-		return;
+-
+ 	newsize = PRIMES[hash->nprime++];
+ 	newitems = xzalloc(newsize * sizeof(newitems[0]));
+ 
+@@ -850,7 +847,7 @@ static void hash_remove(xhash *hash, const char *name)
+ 	hash_item *hi, **phi;
+ 
+ 	phi = &hash->items[hashidx(name) % hash->csize];
+-	while (*phi) {
++	for (;;) {
+ 		hi = *phi;
+ 		if (strcmp(hi->name, name) == 0) {
+ 			hash->glen -= (strlen(name) + 1);
+@@ -867,15 +864,8 @@ static void hash_remove(xhash *hash, const char *name)
+ 
+ static char *skip_spaces(char *p)
+ {
+-	for (;;) {
+-		if (*p == '\\' && p[1] == '\n') {
+-			p++;
+-			t_lineno++;
+-		} else if (*p != ' ' && *p != '\t') {
+-			break;
+-		}
++	while (*p == ' ' || *p == '\t')
+ 		p++;
+-	}
+ 	return p;
+ }
+ 
+@@ -1083,7 +1073,7 @@ static var *setvar_s(var *v, const char *value)
+ 
+ static var *setvar_sn(var *v, const char *value, int len)
+ {
+-	return setvar_p(v, (value && *value && len > 0) ? xstrndup(value, len) : NULL);
++	return setvar_p(v, (len > 0) ? xstrndup(value, len) : NULL);
+ }
+ 
+ /* same as setvar_s but sets USER flag */
+@@ -1143,7 +1133,7 @@ static double getvar_i(var *v)
+ 	if ((v->type & (VF_NUMBER | VF_CACHED)) == 0) {
+ 		v->number = 0;
+ 		s = v->string;
+-		if (s && *s) {
++		if (s) {
+ 			debug_printf_eval("getvar_i: '%s'->", s);
+ 			v->number = my_strtod(&s);
+ 			/* ^^^ hex/oct NOT allowed here! */
+@@ -1389,17 +1379,7 @@ static uint32_t next_token(uint32_t expected)
+ 			} else {
+ 				tc = TC_VARIABLE;
+ 				debug_printf_parse("%s: token found:'%s' TC_VARIABLE\n", __func__, t_string);
+-				if (end_of_name == p) {
+-					/* there is no space for trailing NUL in t_string!
+-					 * We need to save the char we are going to NUL.
+-					 * (we'll use it in future call to next_token())
+-					 */
+-					g_saved_ch = *end_of_name;
+-// especially pathological example is V="abc"; V.2 - it's V concatenated to .2
+-// (it evaluates to "abc0.2"). Because of this case, we can't simply cache
+-// '.' and analyze it later: we also have to *store it back* in next
+-// next_token(), in order to give my_strtod() the undamaged ".2" string.
+-				}
++				g_saved_ch = *end_of_name;
+ 			}
+ 			*end_of_name = '\0'; /* terminate t_string */
+ 		}
+@@ -1415,7 +1395,7 @@ static uint32_t next_token(uint32_t expected)
+ 			(last_token_class & TS_CONCAT_L), (tc & TS_CONCAT_R), (expected & TS_BINOP),
+ 			!(last_token_class == TC_LENGTH && tc == TC_LPAREN));
+ 		if ((last_token_class & TS_CONCAT_L) && (tc & TS_CONCAT_R) && (expected & TS_BINOP)
+-		 && !(last_token_class == TC_LENGTH && tc == TC_LPAREN) /* but not for "length(..." */
++		 && last_token_class != TC_LENGTH /* but not for "length(..." */
+ 		) {
+ 			concat_inserted = TRUE;
+ 			save_tclass = tc;
+@@ -1512,7 +1492,6 @@ static node *parse_expr(uint32_t term_tc)
+ 			    || (t_info == vn->info && t_info == TI_COLON)
+ 			) {
+ 				vn = vn->a.n;
+-				if (!vn->a.n) syntax_error(EMSG_UNEXP_TOKEN);
+ 			}
+ 			if (t_info == TI_TERNARY) /* "?" token */
+ //TODO: why?
+@@ -1651,7 +1630,7 @@ static node *parse_expr(uint32_t term_tc)
+ 			cn->l.n = parse_lrparen_list();
+ 			break;
+ 
+-		case TC_LENGTH:
++		default: /* TC_LENGTH */
+ 			debug_printf_parse("%s: TC_LENGTH\n", __func__);
+ 			tc = next_token(TC_LPAREN /* length(...) */
+ 				| TC_SEMICOL   /* length; */
+@@ -1739,8 +1718,6 @@ static void chain_until_rbrace(void)
+ 	uint32_t tc;
+ 	while ((tc = next_token(TS_GRPSEQ | TC_RBRACE)) != TC_RBRACE) {
+ 		debug_printf_parse("%s: !TC_RBRACE\n", __func__);
+-		if (tc == TC_NEWLINE)
+-			continue;
+ 		rollback_token();
+ 		chain_group();
+ 	}
+@@ -1882,10 +1859,6 @@ static void parse_program(char *p)
+ 			debug_printf_parse("%s: TC_EOF\n", __func__);
+ 			break;
+ 		}
+-		if (tclass == TC_NEWLINE) {
+-			debug_printf_parse("%s: TC_NEWLINE\n", __func__);
+-			continue;
+-		}
+ 		if (tclass == TC_BEGIN) {
+ 			debug_printf_parse("%s: TC_BEGIN\n", __func__);
+ 			seq = &beginseq;
+@@ -2076,7 +2049,9 @@ static regex_t *as_regex(node *op, regex_t *preg)
+  */
+ static char* qrealloc(char *b, int n, int *size)
+ {
+-	if (!b || n >= *size) {
++	if (!b)
++		*size = 0;
++	if (n >= *size) {
+ 		*size = n + (n>>1) + 80;
+ 		b = xrealloc(b, *size);
+ 	}
+@@ -2089,10 +2064,6 @@ static void fsrealloc(int size)
+ 	int i, newsize;
+ 
+ 	if ((unsigned)size >= num_alloc_fields) {
+-		/* Sanity cap, easier than catering for over/underflows */
+-		if ((unsigned)size > 0xffffff)
+-			bb_die_memory_exhausted();
+-
+ 		i = num_alloc_fields;
+ 		num_alloc_fields = size + 16;
+ 
+@@ -2195,8 +2166,8 @@ static int awk_split(const char *s, node *spl, char **slist)
+ 	}
+ 	if (c[0] != ' ') {  /* single-character split */
+ 		if (icase) {
+-			c[0] = toupper(c[0]);
+-			c[1] = tolower(c[1]);
++			c[0] &= 0xdf;
++			c[1] |= 0x20;
+ 		}
+ 		if (*s1)
+ 			n++;
+@@ -2209,15 +2180,15 @@ static int awk_split(const char *s, node *spl, char **slist)
+ 	/* space split: "In the special case that FS is a single space,
+ 	 * fields are separated by runs of spaces and/or tabs and/or newlines"
+ 	 */
+-	while (*s) {
+-		/* s = skip_whitespace(s); -- WRONG (also skips \v \f \r) */
++	for (;;) {
+ 		while (*s == ' ' || *s == '\t' || *s == '\n')
+ 			s++;
+ 		if (!*s)
+ 			break;
+ 		n++;
+-		while (*s && !(*s == ' ' || *s == '\t' || *s == '\n'))
++		do {
+ 			*s1++ = *s++;
++		} while (*s && *s != ' ' && *s != '\t');
+ 		*s1++ = '\0';
+ 	}
+ 	return n;
+@@ -2442,8 +2413,7 @@ static int awk_getline(rstream *rsm, var *v)
+ 					so = eo = s-b;
+ 					while (b[eo] == '\n')
+ 						eo++;
+-					if (b[eo] != '\0')
+-						break;
++					break;
+ 				}
+ 			}
+ 		}
+@@ -2457,11 +2427,6 @@ static int awk_getline(rstream *rsm, var *v)
+ 		b = m = qrealloc(m, p+128, &rsm->size);
+ 		pp = p;
+ 		p += safe_read(fd, b+p, rsm->size - p - 1);
+-		if (p < pp) {
+-			p = 0;
+-			retval = 0;
+-			setvar_ERRNO();
+-		}
+ 		b[p] = '\0';
+ 	} while (p > pp);
+ 
+@@ -2566,9 +2531,7 @@ static char *awk_printf(node *n, size_t *len)
+ 		}
+ 
+ 		diouxX = strchr("diouxX", c);
+-		if (!(diouxX || strchr("cs""eEfFgGaA", c))
+-		 || (after_fmt - fmt_cur) >= MAX_FMT_LEN
+-		) {
++		if (!(diouxX || strchr("cs""eEfFgGaA", c))) {
+ 			/* unknown, or overlong "....%FMT...." */
+ 			/* append "....%<notletters><letter>" part verbatim */
+ //this works (unknown conversion char means "print %FMT verbatim"):
+@@ -2620,7 +2583,7 @@ static char *awk_printf(node *n, size_t *len)
+ 		baked_cur = baked_format;
+ 		*baked_cur++ = '%';
+ 		c = *fmt_cur;
+-		while (strchr("+- 0#'", c) && (baked_cur - baked_format) <= 6) {
++		while (strchr("+- 0#'", c)) {
+ 			*baked_cur++ = c;
+ 			c = *++fmt_cur;
+ 		}
+@@ -2650,7 +2613,7 @@ static char *awk_printf(node *n, size_t *len)
+ 				c = *++fmt_cur;
+ 				//if (isdigit(c)) /* we do not support "%5.*2$d" format */
+ 				//	syntax_error("invalid format specifier");
+-			} else if (isdigit(c)) {
++			} else {
+ 				prec = atoi(fmt_cur);
+ 				//do
+ 				//	c = *++fmt_cur;
+@@ -2668,10 +2631,7 @@ static char *awk_printf(node *n, size_t *len)
+ 		use_fmt = s;
+ //bb_error_msg("w:%d p:%d conv:'%c' fmt_cur:%p after_fmt:%p", width, prec, c, fmt_cur, after_fmt);
+ 		if (starred || diouxX) {
+-			if (width >= 0
+-			 || (starred && (c == 's' || c == 'c'))
+-//GNU awk 5.3.0 compat: "%*s",-10,"A" works like "%-10s","A"
+-			) {
++			if (width >= 0 || c == 's') {
+ 				baked_cur += sprintf(baked_cur, "%d", width);
+ 			}
+ 			if (diouxX) {
+@@ -2731,7 +2691,7 @@ static char *awk_printf(node *n, size_t *len)
+ 			continue;
+ 		}
+  tail:
+-		if (slen != 0 || res_len == 0) {
++		if (slen != 0) {
+ //bb_error_msg("appending:'%.*s'", slen, s);
+ 			res_buf = xrealloc(res_buf, res_len + slen + 1);
+ 			((char*)mempcpy(res_buf + res_len, s, slen))[0] = '\0';
+@@ -2830,7 +2790,7 @@ static int awk_sub(node *rn, const char *repl, int nm, var *src, var *dest /*,in
+ 						continue;
+ 				}
+ 				if ((!bslash && c == '&')
+-				 || (subexp && bslash && c >= '0' && c <= '9')
++				 || (subexp && bslash && (unsigned)(c - '0') <= 9)
+ 				) {
+ 					int n, j = 0;
+ 					if (c != '&') {
+@@ -3096,7 +3056,7 @@ static NOINLINE var *exec_builtin(node *op, var *res)
+ 		setvar_i(res, awk_sub(an[0], as[1], /*matchnum:all*/0, /*src:*/av[2], /*dst:*/av[2]/*, FALSE*/));
+ 		break;
+ 
+-	case B_su: /* sub(regex, repl, string) */
++	default: /* B_su: sub(regex, repl, string) */
+ 		setvar_i(res, awk_sub(an[0], as[1], /*matchnum:first*/1, /*src:*/av[2], /*dst:*/av[2]/*, FALSE*/));
+ 		break;
+ 	}
+@@ -3163,7 +3123,7 @@ static int next_input_file(void)
+ 			break;
+ 		}
+ 		fname = getvar_s(findvar(iamarray(intvar[ARGV]), utoa(argind)));
+-		if (fname && *fname) {
++		if (*fname) {
+ 			if (got_program != 2) { /* there was no -E option */
+ 				/* "If a filename on the command line has the form
+ 				 * var=val it is treated as a variable assignment"
+@@ -3211,7 +3171,7 @@ static var *evaluate(node *op, var *res)
+ #define TMPVAR0 (tmpvars)
+ #define TMPVAR1 (tmpvars + 1)
+ 
+-	while (op) {
++	for (;;) {
+ 		struct {
+ 			var *v;
+ 			const char *s;
+@@ -3339,8 +3299,6 @@ static var *evaluate(node *op, var *res)
+ 				if (!rsm->F) {
+ 					if (opn == '|') {
+ 						rsm->F = popen(R.s, "w");
+-						if (rsm->F == NULL)
+-							bb_simple_perror_msg_and_die("popen");
+ 						rsm->is_pipe = 1;
+ 					} else {
+ 						rsm->F = xfopen(R.s, opn=='w' ? "w" : "a");
+@@ -3434,6 +3392,11 @@ static var *evaluate(node *op, var *res)
+ 			debug_printf_eval("EXIT\n");
+ 			if (op1)
+ 				G.exitcode = (int)L_d;
++			if (!exiting) {
++				exiting = TRUE;
++				nextrec = FALSE;
++				evaluate(endseq.first, &G.exit__tmpvar);
++			}
+ 			awk_exit();
+ 
+ 		/* -- recursive node type -- */
+@@ -3480,9 +3443,7 @@ static var *evaluate(node *op, var *res)
+ 
+ 		case XC( OC_MOVE ):
+ 			debug_printf_eval("MOVE\n");
+-			/* make sure that we never return a temp var */
+-			if (L.v == TMPVAR0)
+-				L.v = res;
++
+ 			/* if source is a temporary string, just relink it to dest */
+ 			if (R.v == TMPVAR1
+ 			 && !(R.v->type & VF_NUMBER)
+@@ -3594,10 +3555,6 @@ static var *evaluate(node *op, var *res)
+ 			double R_d = R_d; /* for compiler */
+ 			debug_printf_eval("FBLTIN\n");
+ 
+-			if (op1 && op1->info == TI_COMMA)
+-				/* Simple builtins take one arg maximum */
+-				syntax_error("Too many arguments");
+-
+ 			switch (opn) {
+ 			case F_in:
+ 				R_d = (long long)L_d;
+@@ -3688,7 +3645,7 @@ static var *evaluate(node *op, var *res)
+ 			case F_ff:
+ 				if (!op1) {
+ 					fflush(stdout);
+-				} else if (L.s && *L.s) {
++				} else if (*L.s) {
+ 					rstream *rsm = newfile(L.s);
+ 					fflush(rsm->F);
+ 				} else {
+@@ -3696,7 +3653,7 @@ static var *evaluate(node *op, var *res)
+ 				}
+ 				break;
+ 
+-			case F_cl: {
++			default: /* F_cl */ {
+ 				rstream *rsm;
+ 				int err = 0;
+ 				rsm = (rstream *)hash_search(fdhash, L.s);
+@@ -3765,7 +3722,7 @@ static var *evaluate(node *op, var *res)
+ 			case '!':
+ 				Ld = !istrue(R.v);
+ 				break;
+-			case '-':
++			default: /* '-' */
+ 				Ld = -R_d;
+ 				break;
+ 			}
+@@ -3840,7 +3797,7 @@ static var *evaluate(node *op, var *res)
+ 				else
+ 					syntax_error(EMSG_NO_MATH);
+ 				break;
+-			case '%':
++			default: /* '%' */
+ 				if (R_d == 0)
+ 					syntax_error(EMSG_DIV_BY_ZERO);
+ 				L_d -= (long long)(L_d / R_d) * R_d;
+@@ -3851,7 +3808,7 @@ static var *evaluate(node *op, var *res)
+ 			break;
+ 		}
+ 
+-		case XC( OC_COMPARE ): {
++		default: /* XC( OC_COMPARE ) */ {
+ 			int i = i; /* for compiler */
+ 			double Ld;
+ 			debug_printf_eval("COMPARE\n");
+@@ -3870,7 +3827,7 @@ static var *evaluate(node *op, var *res)
+ 			case 2:
+ 				i = (Ld >= 0);
+ 				break;
+-			case 4:
++			default:
+ 				i = (Ld == 0);
+ 				break;
+ 			}
+@@ -3879,15 +3836,11 @@ static var *evaluate(node *op, var *res)
+ 			break;
+ 		}
+ 
+-		default:
+-			syntax_error(EMSG_POSSIBLE_ERROR);
+ 		} /* switch */
+ 
+ 		if ((opinfo & OPCLSMASK) <= SHIFT_TIL_THIS)
+ 			op = op->a.n;
+-		if ((opinfo & OPCLSMASK) >= RECUR_FROM_THIS)
+-			break;
+-		if (nextrec)
++		if ((opinfo & OPCLSMASK) >= RECUR_FROM_THIS || nextrec || !op)
+ 			break;
+ 	} /* while (op) */
+ 
+@@ -3906,18 +3859,12 @@ static int awk_exit(void)
+ {
+ 	unsigned i;
+ 
+-	if (!exiting) {
+-		exiting = TRUE;
+-		nextrec = FALSE;
+-		evaluate(endseq.first, &G.exit__tmpvar);
+-	}
+-
+ 	/* waiting for children */
+ 	for (i = 0; i < fdhash->csize; i++) {
+ 		hash_item *hi;
+ 		hi = fdhash->items[i];
+ 		while (hi) {
+-			if (hi->data.rs.F && hi->data.rs.is_pipe)
++			if (hi->data.rs.is_pipe)
+ 				pclose(hi->data.rs.F);
+ 			hi = hi->next;
+ 		}
+@@ -3963,19 +3910,15 @@ int awk_main(int argc UNUSED_PARAM, char **argv)
+ 	handle_special(intvar[RS]);
+ 
+ 	/* Huh, people report that sometimes environ is NULL. Oh well. */
+-	if (environ) {
++	{
+ 		char **envp;
+ 		for (envp = environ; *envp; envp++) {
+ 			/* environ is writable, thus we don't strdup it needlessly */
+ 			char *s = *envp;
+ 			char *s1 = strchr(s, '=');
+-			if (s1) {
+-				*s1 = '\0';
+-				/* Both findvar and setvar_u take const char*
+-				 * as 2nd arg -> environment is not trashed */
+-				setvar_u(findvar(iamarray(intvar[ENVIRON]), s), s1 + 1);
+-				*s1 = '=';
+-			}
++			*s1 = '\0';
++			setvar_u(findvar(iamarray(intvar[ENVIRON]), s), s1 + 1);
++			*s1 = '=';
+ 		}
+ 	}
+ 
+@@ -4001,8 +3944,6 @@ int awk_main(int argc UNUSED_PARAM, char **argv)
+ 			g_progname = optarg;
+ 			fd = xopen_stdin(g_progname);
+ 			s = xmalloc_read(fd, NULL); /* it's NUL-terminated */
+-			if (!s)
+-				bb_perror_msg_and_die("read error from '%s'", g_progname);
+ 			close(fd);
+ 			parse_program(s);
+ 			free(s);
+@@ -4064,8 +4005,9 @@ int awk_main(int argc UNUSED_PARAM, char **argv)
+ 	newfile("/dev/stderr")->F = stderr;
+ 
+ 	evaluate(beginseq.first, &G.main__tmpvar);
+-	if (!mainseq.first && !endseq.first)
++	if (!mainseq.first && !endseq.first) {
+ 		awk_exit();
++	}
+ 
+ 	/* input file could already be opened in BEGIN block */
+ 	if (!iF.F)
+@@ -4084,13 +4026,13 @@ int awk_main(int argc UNUSED_PARAM, char **argv)
+ 			if (nextfile)
+ 				break;
+ 		}
+-		if (i < 0)
+-			syntax_error(strerror(errno));
++
+  next_file:
+ 		if (!next_input_file())
+ 			break;
+ 	}
+ 
++	evaluate(endseq.first, &G.exit__tmpvar);
+ 	awk_exit();
+ 	/*return 0;*/
+ }
+diff --git a/editors/diff.c b/editors/diff.c
+index 6f4ed97..13d2b5a 100644
+--- a/editors/diff.c
++++ b/editors/diff.c
+@@ -217,8 +217,7 @@ static int read_token(FILE_and_pos_t *ft, token_t tok)
+ 		int t;
+ 
+ 		t = fgetc(ft->ft_fp);
+-		if (t != EOF)
+-			ft->ft_pos++;
++		ft->ft_pos += (t != EOF);
+ 		is_space = (t == EOF || isspace(t));
+ 
+ 		/* If t == EOF (-1), set both TOK_EOF and TOK_EOL */
+@@ -227,8 +226,8 @@ static int read_token(FILE_and_pos_t *ft, token_t tok)
+ 		if (t == '\n')
+ 			tok |= TOK_EOL;
+ 
+-		if (option_mask32 & FLAG(i)) /* Handcoded tolower() */
+-			t = (t >= 'A' && t <= 'Z') ? t - ('A' - 'a') : t;
++		if ((option_mask32 & FLAG(i)) && (unsigned)(t - 'A') <= ('Z' - 'A'))
++			t -= ('A' - 'a');
+ 
+ 		if ((option_mask32 & FLAG(w)) && is_space)
+ 			continue;
+@@ -295,9 +294,7 @@ static int search(const int *c, int k, int y, const struct cand *list)
+ 
+ static void stone(const int *a, int n, const int *b, int *J, int pref)
+ {
+-	const unsigned isq = isqrt(n);
+-	const unsigned bound =
+-		(option_mask32 & FLAG(d)) ? UINT_MAX : MAX(256, isq);
++	const unsigned bound = (option_mask32 & FLAG(d)) ? UINT_MAX : 256;
+ 	int clen = 1;
+ 	int clistlen = 100;
+ 	int k = 0;
+@@ -317,12 +314,10 @@ static void stone(const int *a, int n, const int *b, int *J, int pref)
+ 		cand.pred = klist[0];
+ 		do {
+ 			int l, tc;
+-			if (cand.y <= clist[cand.pred].y)
+-				continue;
+ 			l = search(klist, k, cand.y, clist);
+ 			if (l != oldl + 1)
+ 				cand.pred = klist[l - 1];
+-			if (l <= k && clist[klist[l]].y <= cand.y)
++			if (clist[klist[l]].y == cand.y)
+ 				continue;
+ 			if (clen == clistlen) {
+ 				clistlen = clistlen * 11 / 10;
+@@ -581,9 +576,7 @@ start:
+ 				tok0 = read_token(&ft[0], tok0);
+ 				tok1 = read_token(&ft[1], tok1);
+ 
+-				if (((tok0 ^ tok1) & TOK_EMPTY) != 0 /* one is empty (not both) */
+-				 || (!(tok0 & TOK_EMPTY) && TOK2CHAR(tok0) != TOK2CHAR(tok1))
+-				) {
++				if (TOK2CHAR(tok0) != TOK2CHAR(tok1)) {
+ 					J[i] = 0; /* Break the correspondence */
+ 				}
+ 			} while (!(tok0 & tok1 & TOK_EMPTY));
+@@ -636,10 +629,7 @@ static bool diff(FILE* fp[2], char *file[2])
+ 				 * previous change, dump the record and reset it.
+ 				 */
+ 				int ct = (2 * opt_U_context) + 1;
+-				if (idx >= 0
+-				 && v[0].a > vec[idx][0].b + ct
+-				 && v[1].a > vec[idx][1].b + ct
+-				) {
++				if (idx >= 0 && v[0].a > vec[idx][0].b + ct) {
+ 					break;
+ 				}
+ 
+@@ -714,7 +704,7 @@ static int diffreg(char *file[2])
+ 	fp[1] = stdin;
+ 	for (i = 0; i < 2; i++) {
+ 		int fd = STDIN_FILENO;
+-		if (!LONE_DASH(file[i])) {
++		if (strcmp(file[i], "-") != 0) {
+ 			if (!(option_mask32 & FLAG(N))) {
+ 				fd = open_or_warn(file[i], O_RDONLY);
+ 				if (fd == -1)
+@@ -729,13 +719,12 @@ static int diffreg(char *file[2])
+ 		/* Our diff implementation is using seek.
+ 		 * When we meet non-seekable file, we must make a temp copy.
+ 		 */
+-		if (lseek(fd, 0, SEEK_SET) == -1 && errno == ESPIPE) {
++		if (lseek(fd, 0, SEEK_SET) == -1) {
+ 			char name[] = "/tmp/difXXXXXX";
+ 			int fd_tmp = xmkstemp(name);
+ 
+ 			unlink(name);
+-			if (bb_copyfd_eof(fd, fd_tmp) < 0)
+-				xfunc_die();
++			bb_copyfd_eof(fd, fd_tmp);
+ 			if (fd != STDIN_FILENO)
+ 				close(fd);
+ 			fd = fd_tmp;
+@@ -782,16 +771,11 @@ out:
+ 
+ static void print_status(int status, char *path[2])
+ {
+-	switch (status) {
+-	case STATUS_BINARY:
+-	case STATUS_DIFFER:
+-		if ((option_mask32 & FLAG(q)) || status == STATUS_BINARY)
+-			printf("Files %s and %s differ\n", path[0], path[1]);
+-		break;
+-	case STATUS_SAME:
++	if (status == STATUS_SAME) {
+ 		if (option_mask32 & FLAG(s))
+ 			printf("Files %s and %s are identical\n", path[0], path[1]);
+-		break;
++	} else if ((option_mask32 & FLAG(q)) || status == STATUS_BINARY) {
++		printf("Files %s and %s differ\n", path[0], path[1]);
+ 	}
+ }
+ 
+@@ -993,7 +977,7 @@ int diff_main(int argc UNUSED_PARAM, char **argv)
+ 	xfunc_error_retval = 2;
+ 	for (i = 0; i < 2; i++) {
+ 		file[i] = argv[i];
+-		if (LONE_DASH(file[i])) {
++		if (strcmp(file[i], "-") == 0) {
+ 			fstat(STDIN_FILENO, &stb[i]);
+ 			gotstdin++;
+ 		} else if (option_mask32 & FLAG(N)) {
+@@ -1018,17 +1002,7 @@ int diff_main(int argc UNUSED_PARAM, char **argv)
+ 	 * single NFS file system, if a local device number (st_dev) exceeds
+ 	 * 255, or if a local inode number (st_ino) exceeds 16777215.
+ 	 */
+-	if (ENABLE_DESKTOP
+-	 && stb[0].st_ino == stb[1].st_ino
+-	 && stb[0].st_dev == stb[1].st_dev
+-	 && stb[0].st_size == stb[1].st_size
+-	 && stb[0].st_mtime == stb[1].st_mtime
+-	 && stb[0].st_ctime == stb[1].st_ctime
+-	 && stb[0].st_mode == stb[1].st_mode
+-	 && stb[0].st_nlink == stb[1].st_nlink
+-	 && stb[0].st_uid == stb[1].st_uid
+-	 && stb[0].st_gid == stb[1].st_gid
+-	) {
++	if (ENABLE_DESKTOP && stb[0].st_ino == stb[1].st_ino) {
+ 		/* files are physically the same; no need to compare them */
+ 		return STATUS_SAME;
+ 	}
+@@ -1048,7 +1022,7 @@ int diff_main(int argc UNUSED_PARAM, char **argv)
+ 			xstat(file[dir], &stb[dir]);
+ 		}
+ 		/* diffreg can get non-regular files here */
+-		print_status(gotstdin > 1 ? STATUS_SAME : diffreg(file), file);
++		print_status(diffreg(file), file);
+ 
+ 		if (ENABLE_FEATURE_CLEAN_UP && dirfile)
+ 			free(file[dir]);
+diff --git a/editors/ed.c b/editors/ed.c
+index a02634e..9746b5d 100644
+--- a/editors/ed.c
++++ b/editors/ed.c
+@@ -98,11 +98,6 @@ static LINE *findLine(int num)
+ 		return NULL;
+ 	}
+ 
+-	if (curNum <= 0) {
+-		curNum = 1;
+-		curLine = lines.next;
+-	}
+-
+ 	if (num == curNum)
+ 		return curLine;
+ 
+@@ -176,16 +171,13 @@ static NOINLINE int searchLines(const char *str, int num1, int num2)
+ 			return 0;
+ 		}
+ 		str = searchString;
+-	}
+-
+-	if (str != searchString)
++	} else {
+ 		strcpy(searchString, str);
++	}
+ 
+ 	len = strlen(str);
+ 
+ 	lp = findLine(num1);
+-	if (lp == NULL)
+-		return 0;
+ 
+ 	while (num1 <= num2) {
+ 		if (findString(lp, str, len, 0) >= 0)
+@@ -270,6 +262,7 @@ static const char* getNum(const char *cp, smallint *retHaveNum, int *retNum)
+ 				break;
+ 		}
+ 
++		haveNum = TRUE;
+ 		value += (minus ? -num : num);
+ 
+ 		cp = skip_whitespace(cp);
+@@ -320,7 +313,7 @@ static int insertLine(int num, const char *data, int len)
+ {
+ 	LINE *newLp, *lp;
+ 
+-	if ((num < 1) || (num > lastNum + 1)) {
++	if (num > lastNum + 1) {
+ 		bb_simple_error_msg("inserting at bad line number");
+ 		return FALSE;
+ 	}
+@@ -330,15 +323,7 @@ static int insertLine(int num, const char *data, int len)
+ 	memcpy(newLp->data, data, len);
+ 	newLp->len = len;
+ 
+-	if (num > lastNum)
+-		lp = &lines;
+-	else {
+-		lp = findLine(num);
+-		if (lp == NULL) {
+-			free((char *) newLp);
+-			return FALSE;
+-		}
+-	}
++	lp = (num > lastNum) ? &lines : findLine(num);
+ 
+ 	newLp->next = lp;
+ 	newLp->prev = lp->prev;
+@@ -375,7 +360,7 @@ static void addLines(int num)
+ 			 * Now we exit to ed prompt. Is in important? */
+ 			return;
+ 		}
+-		if (buf[0] == '.' && buf[1] == '\n' && buf[2] == '\0')
++		if (buf[0] == '.' && buf[1] == '\n')
+ 			return;
+ 		if (!insertLine(num++, buf, len))
+ 			return;
+@@ -393,7 +378,7 @@ static int readLines(const char *file, int num)
+ 	unsigned charCount;
+ 	char *cp;
+ 
+-	if ((num < 1) || (num > lastNum + 1)) {
++	if (num > lastNum + 1) {
+ 		bb_simple_error_msg("bad line for read");
+ 		return FALSE;
+ 	}
+@@ -414,10 +399,7 @@ static int readLines(const char *file, int num)
+ 
+ 		if (cp) {
+ 			len = (cp - bufPtr) + 1;
+-			if (!insertLine(num, bufPtr, len)) {
+-				close(fd);
+-				return FALSE;
+-			}
++			insertLine(num, bufPtr, len);
+ 			bufPtr += len;
+ 			bufUsed -= len;
+ 			charCount += len;
+@@ -450,10 +432,7 @@ static int readLines(const char *file, int num)
+ 	}
+ 
+ 	if (bufUsed) {
+-		if (!insertLine(num, bufPtr, bufUsed)) {
+-			close(fd);
+-			return -1;
+-		}
++		insertLine(num, bufPtr, bufUsed);
+ 		charCount += bufUsed;
+ 	}
+ 
+@@ -492,25 +471,14 @@ static int writeLines(const char *file, int num1, int num2)
+ 	}
+ 
+ 	lp = findLine(num1);
+-	if (lp == NULL) {
+-		close(fd);
+-		return FALSE;
+-	}
+ 
+ 	while (num1++ <= num2) {
+-		if (full_write(fd, lp->data, lp->len) != lp->len) {
+-			bb_simple_perror_msg(file);
+-			close(fd);
+-			return FALSE;
+-		}
++		full_write(fd, lp->data, lp->len);
+ 		charCount += lp->len;
+ 		lp = lp->next;
+ 	}
+ 
+-	if (close(fd) < 0) {
+-		bb_simple_perror_msg(file);
+-		return FALSE;
+-	}
++	close(fd);
+ 
+ 	/* https://pubs.opengroup.org/onlinepubs/9699919799/utilities/ed.html
+ 	 * "Write Command"
+@@ -539,8 +507,6 @@ static int printLines(int num1, int num2, int expandFlag)
+ 		return FALSE;
+ 
+ 	lp = findLine(num1);
+-	if (lp == NULL)
+-		return FALSE;
+ 
+ 	while (num1 <= num2) {
+ 		if (!expandFlag) {
+@@ -557,7 +523,7 @@ static int printLines(int num1, int num2, int expandFlag)
+ 		cp = lp->data;
+ 		count = lp->len;
+ 
+-		if ((count > 0) && (cp[count - 1] == '\n'))
++		if (cp[count - 1] == '\n')
+ 			count--;
+ 
+ 		while (count-- > 0) {
+@@ -586,8 +552,6 @@ static void deleteLines(int num1, int num2)
+ 		return;
+ 
+ 	lp = findLine(num1);
+-	if (lp == NULL)
+-		return;
+ 
+ 	if ((curNum >= num1) && (curNum <= num2)) {
+ 		if (num2 < lastNum)
+@@ -682,14 +646,11 @@ static void subCommand(const char *cmd, int num1, int num2)
+ 			return;
+ 		}
+ 		oldStr = searchString;
+-	}
+-
+-	if (oldStr != searchString)
++	} else {
+ 		strcpy(searchString, oldStr);
++	}
+ 
+ 	lp = findLine(num1);
+-	if (lp == NULL)
+-		return;
+ 
+ 	oldLen = strlen(oldStr);
+ 	newLen = strlen(newStr);
+@@ -703,7 +664,6 @@ static void subCommand(const char *cmd, int num1, int num2)
+ 		if (offset < 0) {
+ 			if (needPrint) {
+ 				printLines(num1, num1, FALSE);
+-				needPrint = FALSE;
+ 			}
+ 			offset = 0;
+ 			lp = lp->next;
+@@ -804,13 +764,7 @@ static void doCommands(void)
+ 		len = read_line_input(NULL, prompt, buf, sizeof(buf));
+ 		if (len <= 0)
+ 			return;
+-		while (len && isspace(buf[--len]))
+-			buf[len] = '\0';
+-
+-		if ((curNum == 0) && (lastNum > 0)) {
+-			curNum = 1;
+-			curLine = lines.next;
+-		}
++		buf[--len] = '\0';
+ 
+ 		have1 = FALSE;
+ 		have2 = FALSE;
+@@ -925,9 +879,7 @@ static void doCommands(void)
+ 			}
+ 			if (!have1)
+ 				num1 = lastNum;
+-			if (readLines(cp, num1 + 1))
+-				break;
+-			if (fileName == NULL)
++			if (readLines(cp, num1 + 1) && fileName == NULL)
+ 				fileName = xstrdup(cp);
+ 			break;
+ 
+@@ -970,14 +922,6 @@ static void doCommands(void)
+ 			}
+ 			break;
+ 
+-		case '.':
+-			if (have1) {
+-				bb_simple_error_msg("no arguments allowed");
+-				break;
+-			}
+-			printLines(curNum, curNum, FALSE);
+-			break;
+-
+ 		case '-':
+ 			if (setCurNum(curNum - 1))
+ 				printLines(curNum, curNum, FALSE);
+diff --git a/editors/patch.c b/editors/patch.c
+index ee0ccd3..81dbdfc 100644
+--- a/editors/patch.c
++++ b/editors/patch.c
+@@ -68,8 +68,6 @@ static void dlist_free(struct double_list *list, void (*freeit)(void *data))
+ 		void *pop = list;
+ 		list = list->next;
+ 		freeit(pop);
+-		// Bail out also if list is circular.
+-		if (list == pop) break;
+ 	}
+ }
+ 
+@@ -156,13 +154,11 @@ static void finish_oldfile(void)
+ 		// Copy the rest of the data and replace the original with the copy.
+ 		char *temp;
+ 
+-		if (TT.filein != -1) {
+-			bb_copyfd_eof(TT.filein, TT.fileout);
+-			xclose(TT.filein);
+-		}
++		bb_copyfd_eof(TT.filein, TT.fileout);
++		xclose(TT.filein);
+ 		xclose(TT.fileout);
+ 
+-		if (!ENABLE_LONG_OPTS || TT.tempname[0]) { /* not --dry-run? */
++		if (TT.tempname[0]) { /* not --dry-run? */
+ 			temp = xstrdup(TT.tempname);
+ 			temp[strlen(temp) - 6] = '\0';
+ 			rename(TT.tempname, temp);
+@@ -177,8 +173,6 @@ static void finish_oldfile(void)
+ 
+ static void fail_hunk(void)
+ {
+-	if (!TT.current_hunk) return;
+-
+ 	fdprintf(2, "Hunk %d FAILED %ld/%ld.\n", TT.hunknum, TT.oldline, TT.newline);
+ 	TT.exitval = 1;
+ 
+@@ -193,7 +187,7 @@ static void fail_hunk(void)
+ 	// Abort the copy and delete the temporary file.
+ 	close(TT.filein);
+ 	close(TT.fileout);
+-	if (!ENABLE_LONG_OPTS || TT.tempname[0]) { /* not --dry-run? */
++	if (TT.tempname[0]) { /* not --dry-run? */
+ 		unlink(TT.tempname);
+ 		free(TT.tempname);
+ 	}
+@@ -236,7 +230,7 @@ static int apply_one_hunk(void)
+ 	// complete hunk.
+ 	plist = TT.current_hunk;
+ 	buf = NULL;
+-	if (reverse ? TT.oldlen : TT.newlen) for (;;) {
++	for (;;) {
+ //FIXME: this performs 1-byte reads:
+ 		char *data = xmalloc_reads(TT.filein, NULL);
+ 
+@@ -263,7 +257,7 @@ static int apply_one_hunk(void)
+ 			if (PATCH_DEBUG) fdprintf(2, "INEOF\n");
+ 
+ 			// Does this hunk need to match EOF?
+-			if (!plist && matcheof) break;
++			if (!plist) break;
+ 
+ 			if (backwarn)
+ 				fdprintf(2, "Possibly reversed hunk %d at %ld\n",
+@@ -288,7 +282,7 @@ static int apply_one_hunk(void)
+ 		// out of buffer.
+ 
+ 		for (;;) {
+-			while (plist && *plist->data == "+-"[reverse]) {
++			while (*plist->data == "+-"[reverse]) {
+ 				if (strcmp(check->data, plist->data+1) == 0
+ 				 && !backwarn
+ 				) {
+@@ -300,7 +294,7 @@ static int apply_one_hunk(void)
+ 				}
+ 				plist = plist->next;
+ 			}
+-			if (!plist || strcmp(check->data, plist->data+1)) {
++			if (strcmp(check->data, plist->data+1)) {
+ 				// Match failed.  Write out first line of buffered data and
+ 				// recheck remaining buffered data for a new match.
+ 
+@@ -435,46 +429,37 @@ int patch_main(int argc UNUSED_PARAM, char **argv)
+ 
+ 		// Are we assembling a hunk?
+ 		if (state >= 2) {
+-			switch (*patchline) {
+-			case '\\':
++			if (*patchline == '\\') {
+ 				// '\ No newline at end of file' detected, mark
+ 				// previous line, if it exists.
+-				if (TT.current_hunk->prev)
+-					TT.current_hunk->prev->no_newline = TRUE;
++				TT.current_hunk->prev->no_newline = TRUE;
+ 				free(patchline);
+ 				continue;
+-			case ' ':
+-			case '+':
+-			case '-':
+-				dlist_add(&TT.current_hunk, patchline);
+-
+-				if (*patchline != '+') oldlen--;
+-				if (*patchline != '-') newlen--;
+-
+-				// Context line?
+-				if (*patchline == ' ' && state == 2) TT.context++;
+-				else state = 3;
+-
+-				// If we've consumed all expected hunk lines, apply the hunk.
+-
+-				if (!oldlen && !newlen) {
+-					// Peek ahead for '\ No newline at end of file', mark
+-					// previous line, if it exists.
+-					int c = getchar();
+-					ungetc(c, stdin);
+-					if (c == '\\') {
+-						if (TT.current_hunk->prev)
+-							TT.current_hunk->prev->no_newline = TRUE;
+-						do {
+-							c = getchar();
+-						} while (c != EOF && c != '\n');
+-					}
+-					state = apply_one_hunk();
++			}
++			dlist_add(&TT.current_hunk, patchline);
++
++			if (*patchline != '+') oldlen--;
++			if (*patchline != '-') newlen--;
++
++			// Context line?
++			if (*patchline == ' ' && state == 2) TT.context++;
++			else state = 3;
++
++			// If we've consumed all expected hunk lines, apply the hunk.
++
++			if (!oldlen && !newlen) {
++				// Peek ahead for '\ No newline at end of file', mark
++				// previous line, if it exists.
++				int c = getchar();
++				ungetc(c, stdin);
++				if (c == '\\') {
++					TT.current_hunk->prev->no_newline = TRUE;
++					do {
++						c = getchar();
++					} while (c != EOF && c != '\n');
+ 				}
+-				continue;
++				state = apply_one_hunk();
+ 			}
+-			fail_hunk();
+-			state = 0;
+ 			continue;
+ 		}
+ 
+@@ -529,13 +514,6 @@ int patch_main(int argc UNUSED_PARAM, char **argv)
+ 			TT.context = 0;
+ 			state = 2;
+ 
+-			// If the --- line is missing or malformed, either oldname
+-			// or (for -R) newname could be NULL -- but not both.  Like
+-			// GNU patch, proceed based on the +++ line, and avoid SEGVs.
+-			if (!oldname)
+-				oldname = xstrdup("MISSING_FILENAME");
+-			if (!newname)
+-				newname = xstrdup("MISSING_FILENAME");
+ 
+ 			// If this is the first hunk, open the file.
+ 			if (TT.filein == -1) {
+@@ -549,10 +527,12 @@ int patch_main(int argc UNUSED_PARAM, char **argv)
+ 
+ 				// We're deleting oldname if new file is /dev/null (before -p)
+ 				// or if new hunk is empty (zero context) after patching
+-				if (strcmp(name, "/dev/null") == 0 || !(reverse ? oldsum : newsum)) {
+-					name = reverse ? newname : oldname;
++				if ((name && strcmp(name, "/dev/null") == 0) || !newsum) {
++					name = oldname;
+ 					empty = 1;
+ 				}
++				if (!name)
++					name = (char *)"MISSING_FILENAME";
+ 
+ 				// Handle -p path truncation.
+ 				for (i = 0, s = name; *s;) {
+@@ -587,7 +567,7 @@ int patch_main(int argc UNUSED_PARAM, char **argv)
+ 					struct stat statbuf;
+ 
+ 					// If the old file was null, we're creating a new one.
+-					if (strcmp(oldname, "/dev/null") == 0 || !oldsum) {
++					if ((oldname && strcmp(oldname, "/dev/null") == 0) || !oldsum) {
+ 						printf("creating %s\n", name);
+ 						if (!(opts & FLAG_dry_run)) {
+ 							s = strrchr(name, '/');
+diff --git a/editors/sed.c b/editors/sed.c
+index 029e9b8..82665e8 100644
+--- a/editors/sed.c
++++ b/editors/sed.c
+@@ -266,19 +266,15 @@ static unsigned parse_escapes(char *dest, const char *string, int len, char from
+ 	while (i < len) {
+ 		if (string[i] == '\\') {
+ 			if (!to || string[i+1] == from) {
+-				if ((*d = to ? to : string[i+1]) == '\0')
+-					return d - dest;
++				*d++ = to ? to : string[i+1];
+ 				i += 2;
+-				d++;
+ 				continue;
+ 			}
+ 			i++; /* skip backslash in string[] */
+ 			*d++ = '\\';
+ 			/* fall through: copy next char verbatim */
+ 		}
+-		if ((*d = string[i++]) == '\0')
+-			return d - dest;
+-		d++;
++		*d++ = string[i++];
+ 	}
+ 	*d = '\0';
+ 	return d - dest;
+@@ -333,7 +329,7 @@ static int index_of_next_unescaped_regexp_delim(int delimiter, const char *str)
+ 			escaped = 0;
+ 		else if (ch == '\\')
+ 			escaped = 1;
+-		else if (bracket == -1 && ch == '[')
++		else if (ch == '[')
+ 			bracket = idx;
+ 		else if (ch == delimiter)
+ 			return idx;
+@@ -422,14 +418,7 @@ static int parse_file_cmd(/*sed_cmd_t *sed_cmd,*/ const char *filecmdstr, char *
+ 	if (eol == start)
+ 		bb_simple_error_msg_and_die("empty filename");
+ 
+-	if (*eol) {
+-		/* If lines glued together, put backslash back. */
+-		*retval = xstrndup(start, eol-start + 1);
+-		(*retval)[eol-start] = '\\';
+-	} else {
+-		/* eol is NUL */
+-		*retval = xstrdup(start);
+-	}
++	*retval = xstrdup(start);
+ 
+ 	return eol - filecmdstr;
+ }
+@@ -531,7 +520,7 @@ static int parse_subst_cmd(sed_cmd_t *sed_cmd, const char *substr)
+  */
+ static const char *parse_cmd_args(sed_cmd_t *sed_cmd, const char *cmdstr)
+ {
+-	static const char cmd_letters[] ALIGN1 = "saicrw:btTydDgGhHlnNpPqx={}";
++	static const char cmd_letters[] ALIGN1 = "saicrw:btTydDgGhHnNpPqx={}";
+ 	enum {
+ 		IDX_s = 0,
+ 		IDX_a,
+@@ -550,7 +539,6 @@ static const char *parse_cmd_args(sed_cmd_t *sed_cmd, const char *cmdstr)
+ 		IDX_G,
+ 		IDX_h,
+ 		IDX_H,
+-		IDX_l,
+ 		IDX_n,
+ 		IDX_N,
+ 		IDX_p,
+@@ -677,16 +665,14 @@ static void add_cmd(const char *cmdstr)
+ 		/* Skip leading whitespace and semicolons */
+ 		cmdstr += strspn(cmdstr, semicolon_whitespace);
+ 
+-		/* If no more commands, exit. */
+-		if (!*cmdstr) break;
++
+ 
+ 		/* if this is a comment, jump past it and keep going */
+ 		if (*cmdstr == '#') {
+ 			/* "#n" is the same as using -n on the command line */
+ 			if (cmdstr[1] == 'n')
+ 				G.be_quiet++;
+-			cmdstr = strpbrk(cmdstr, "\n\r");
+-			if (!cmdstr) break;
++			cmdstr = strchrnul(cmdstr, '\n');
+ 			continue;
+ 		}
+ 
+@@ -880,7 +866,7 @@ static int do_subst_command(sed_cmd_t *sed_cmd, char **line_p)
+ 		 * second is "" before "d", third is "" after "d".
+ 		 * Second match is NOT replaced!
+ 		 */
+-		if (prev_match_empty || start != 0 || start != end) {
++		if (prev_match_empty || start != end) {
+ 			//dbg("%d %d %d", prev_match_empty, start, end);
+ 			dbg("inserting replacement at %d in '%s'", start, line);
+ 			do_subst_w_backrefs(line, sed_cmd->string);
+@@ -941,7 +927,6 @@ static sed_cmd_t *branch_to(char *label)
+ 
+ 	for (sed_cmd = G.sed_cmd_head; sed_cmd; sed_cmd = sed_cmd->next) {
+ 		if (sed_cmd->cmd == ':'
+-		 && sed_cmd->string
+ 		 && strcmp(sed_cmd->string, label) == 0
+ 		) {
+ 			return sed_cmd;
+@@ -1000,10 +985,6 @@ static void puts_maybe_newline(char *s, FILE *file, char *last_puts_char, char l
+ 		lpc = last_gets_char;
+ 	}
+ 
+-	if (ferror(file)) {
+-		xfunc_error_retval = 4;  /* It's what gnu sed exits with... */
+-		bb_simple_error_msg_and_die(bb_msg_write_error);
+-	}
+ 	*last_puts_char = lpc;
+ }
+ 
+@@ -1151,34 +1132,22 @@ static void process_files(void)
+ 			    : (sed_cmd->beg_line == linenum)
+ 			    )
+ 			));
+-		dbg("match4:%d", (beg_match(sed_cmd, pattern_space)));
+ 		dbg("match5:%d", (sed_cmd->beg_line == -1 && next_line == NULL));
+ 
+ 		/* Are we continuing a previous multi-line match? */
+-		sed_cmd->in_match = sed_cmd->in_match
+-			/* Or is no range necessary? */
+-			|| (!sed_cmd->beg_line && !sed_cmd->end_line
+-				&& !sed_cmd->beg_match && !sed_cmd->end_match)
+-			/* Or did we match the start of a numerical range? */
+-			|| (sed_cmd->beg_line > 0
+-			    && (sed_cmd->end_line || sed_cmd->end_match
+-				  /* note: even if end is numeric and is < linenum too,
+-				   * GNU sed matches! We match too, therefore we don't
+-				   * check here that linenum <= end.
+-				   * Example:
+-				   * printf '1\n2\n3\n4\n' | sed -n '1{N;N;d};1p;2,3p;3p;4p'
+-				   * first three input lines are deleted;
+-				   * 4th line is matched and printed
+-				   * by "2,3" (!) and by "4" ranges
+-				   */
+-				? (sed_cmd->beg_line <= linenum)    /* N,end */
+-				: (sed_cmd->beg_line == linenum)    /* N */
+-				)
+-			    )
+-			/* Or does this line match our begin address regex? */
+-			|| (beg_match(sed_cmd, pattern_space))
+-			/* Or did we match last line of input? */
+-			|| (sed_cmd->beg_line == -1 && next_line == NULL);
++		if (!sed_cmd->in_match) {
++			if (sed_cmd->beg_match)
++				sed_cmd->in_match = !regexec(sed_cmd->beg_match, pattern_space, 0, NULL, 0);
++			else if (!sed_cmd->beg_line)
++				sed_cmd->in_match = 1;
++			else if (sed_cmd->beg_line > 0)
++				sed_cmd->in_match = (sed_cmd->end_line || sed_cmd->end_match)
++					? (sed_cmd->beg_line <= linenum)
++					: (sed_cmd->beg_line == linenum);
++			else if (sed_cmd->beg_line == -1)
++				sed_cmd->in_match = (next_line == NULL);
++		}
++
+ 
+ 		/* Snapshot the value */
+ 		matched = sed_cmd->in_match;
+@@ -1434,17 +1403,11 @@ static void process_files(void)
+ 			break;
+ 		case 'G':	/* Append newline and hold space to pattern space */
+ 		{
+-			int pattern_space_size = 2;
+-			int hold_space_size = 0;
++			int pattern_space_size = 2 + strlen(pattern_space);
++			int hold_space_size = G.hold_space ? strlen(G.hold_space) : 0;
+ 
+-			if (pattern_space)
+-				pattern_space_size += strlen(pattern_space);
+-			if (G.hold_space)
+-				hold_space_size = strlen(G.hold_space);
+ 			pattern_space = xrealloc(pattern_space,
+ 					pattern_space_size + hold_space_size);
+-			if (pattern_space_size == 2)
+-				pattern_space[0] = 0;
+ 			strcat(pattern_space, "\n");
+ 			if (G.hold_space)
+ 				strcat(pattern_space, G.hold_space);
+@@ -1458,32 +1421,20 @@ static void process_files(void)
+ 			break;
+ 		case 'H':	/* Append newline and pattern space to hold space */
+ 		{
+-			int hold_space_size = 2;
+-			int pattern_space_size = 0;
++			int hold_space_size = 2 + (G.hold_space ? strlen(G.hold_space) : 0);
++			int pattern_space_size = strlen(pattern_space);
+ 
+-			if (G.hold_space)
+-				hold_space_size += strlen(G.hold_space);
+-			if (pattern_space)
+-				pattern_space_size = strlen(pattern_space);
+ 			G.hold_space = xrealloc(G.hold_space,
+ 					hold_space_size + pattern_space_size);
+ 
+ 			if (hold_space_size == 2)
+ 				*G.hold_space = 0;
+ 			strcat(G.hold_space, "\n");
+-			if (pattern_space)
+-				strcat(G.hold_space, pattern_space);
++			strcat(G.hold_space, pattern_space);
+ 
+ 			break;
+ 		}
+-		case 'x': /* Exchange hold and pattern space */
+-		{
+-			char *tmp = pattern_space;
+-			pattern_space = G.hold_space ? G.hold_space : xzalloc(1);
+-			last_gets_char = '\n';
+-			G.hold_space = tmp;
+-			break;
+-		}
++
+ 		} /* switch */
+ 	} /* for each cmd */
+ 
+@@ -1622,7 +1573,7 @@ int sed_main(int argc UNUSED_PARAM, char **argv)
+ 			G.last_input_file++;
+  start:
+ 			if (!(opt & OPT_in_place)) {
+-				if (LONE_DASH(*argv)) {
++				if (strcmp(*argv, "-") == 0) {
+ 					*argv = (char*)bb_msg_standard_input;
+ 					process_files();
+ 				}
+@@ -1648,10 +1599,6 @@ int sed_main(int argc UNUSED_PARAM, char **argv)
+ 
+ 			process_files();
+ 			fflush(G.nonstdout);
+-			if (ferror(G.nonstdout)) {
+-				xfunc_error_retval = 4;  /* It's what gnu sed exits with... */
+-				bb_simple_error_msg_and_die(bb_msg_write_error);
+-			}
+ 			fclose(G.nonstdout);
+ 			G.nonstdout = stdout;
+ 
+diff --git a/editors/vi.c b/editors/vi.c
+index c1fd914..8124784 100644
+--- a/editors/vi.c
++++ b/editors/vi.c
+@@ -217,14 +217,14 @@
+ 
+ // 0x9b is Meta-ESC
+ #if ENABLE_FEATURE_VI_8BIT
+-# define Isprint(c) ((unsigned char)(c) >= ' ' && (c) != 0x7f && (unsigned char)(c) != 0x9b)
++# define Isprint(c) ((unsigned char)(c) != 0x9b)
+ #else
+ # define Isprint(c) ((unsigned char)(c) >= ' ' && (unsigned char)(c) < 0x7f)
+ #endif
+ 
+ #endif
+ 
+-#define isbackspace(c) ((c) == term_orig.c_cc[VERASE] || (c) == 8 || (c) == 127)
++#define isbackspace(c) ((c) == 8 || (c) == 127)
+ 
+ enum {
+ 	MAX_TABSTOP = 32, // sanity limit
+@@ -598,10 +598,7 @@ static void write1(const char *out)
+ static int query_screen_dimensions(void)
+ {
+ 	int err = get_terminal_width_height(STDIN_FILENO, &columns, &rows);
+-	if (rows > MAX_SCR_ROWS)
+-		rows = MAX_SCR_ROWS;
+-	if (columns > MAX_SCR_COLS)
+-		columns = MAX_SCR_COLS;
++	
+ 	return err;
+ }
+ #else
+@@ -653,10 +650,6 @@ static void place_cursor(int row, int col)
+ {
+ 	char cm1[sizeof(ESC_SET_CURSOR_POS) + sizeof(int)*3 * 2];
+ 
+-	if (row < 0) row = 0;
+-	if (row >= rows) row = rows - 1;
+-	if (col < 0) col = 0;
+-	if (col >= columns) col = columns - 1;
+ 
+ 	sprintf(cm1, ESC_SET_CURSOR_POS, row + 1, col + 1);
+ 	write1(cm1);
+@@ -712,7 +705,7 @@ static char *dollar_line(char *p) // return pointer to just before NL line
+ {
+ 	p = end_line(p);
+ 	// Try to stay off of the Newline
+-	if (*p == '\n' && (p - begin_line(p)) > 0)
++	if ((p - begin_line(p)) > 0)
+ 		p--;
+ 	return p;
+ }
+@@ -720,7 +713,7 @@ static char *dollar_line(char *p) // return pointer to just before NL line
+ static char *prev_line(char *p) // return pointer first char prev line
+ {
+ 	p = begin_line(p);	// goto beginning of cur line
+-	if (p > text && p[-1] == '\n')
++	if (p > text)
+ 		p--;			// step to prev line
+ 	p = begin_line(p);	// goto beginning of prev line
+ 	return p;
+@@ -729,7 +722,7 @@ static char *prev_line(char *p) // return pointer first char prev line
+ static char *next_line(char *p) // return pointer first char next line
+ {
+ 	p = end_line(p);
+-	if (p < end - 1 && *p == '\n')
++	if (p < end - 1)
+ 		p++;			// step to next line
+ 	return p;
+ }
+@@ -762,10 +755,8 @@ static int count_lines(char *start, char *stop)
+ 	cnt = 0;
+ 	stop = end_line(stop);
+ 	while (start <= stop && start <= end - 1) {
+-		start = end_line(start);
+-		if (*start == '\n')
+-			cnt++;
+-		start++;
++		start = end_line(start) + 1;
++		cnt++;
+ 	}
+ 	return cnt;
+ }
+@@ -877,9 +868,7 @@ static void sync_cursor(char *d, int *row, int *col)
+ 	}
+ 	// "d" is on screen- find out which row
+ 	tp = screenbegin;
+-	for (ro = 0; ro < rows - 1; ro++) {	// drive "ro" to correct row
+-		if (tp == beg_cur)
+-			break;
++	for (ro = 0; tp != beg_cur; ro++) {	// drive "ro" to correct row
+ 		tp = next_line(tp);
+ 	}
+ 
+@@ -996,19 +985,7 @@ static void refresh(int full_screen)
+ 	int li, changed;
+ 	char *tp, *sp;		// pointer into text[] and screen[]
+ 
+-	if (ENABLE_FEATURE_VI_WIN_RESIZE IF_FEATURE_VI_ASK_TERMINAL(&& !G.get_rowcol_error) ) {
+-		unsigned c = columns, r = rows;
+-		query_screen_dimensions();
+-#if ENABLE_FEATURE_VI_USE_SIGNALS
+-		full_screen |= (c - columns) | (r - rows);
+-#else
+-		if (c != columns || r != rows) {
+-			full_screen = TRUE;
+-			// update screen memory since SIGWINCH won't have done it
+-			new_screen(rows, columns);
+-		}
+-#endif
+-	}
++
+ 	sync_cursor(dot, &crow, &ccol);	// where cursor will be (on "dot")
+ 	tp = screenbegin;	// index into text[] of top line
+ 
+@@ -1021,9 +998,7 @@ static void refresh(int full_screen)
+ 
+ 		// skip to the end of the current text[] line
+ 		if (tp < end) {
+-			char *t = memchr(tp, '\n', end - tp);
+-			if (!t) t = end - 1;
+-			tp = t + 1;
++			tp = end_line(tp) + 1;
+ 		}
+ 
+ 		// see if there are any changes between virtual screen and out_buf
+@@ -1060,8 +1035,6 @@ static void refresh(int full_screen)
+ 		}
+ 
+ 		// make a sanity check of columns indexes
+-		if (cs < 0) cs = 0;
+-		if (ce > columns - 1) ce = columns - 1;
+ 		if (cs > ce) { cs = 0; ce = columns - 1; }
+ 		// is there a change between virtual screen and out_buf
+ 		if (changed) {
+@@ -1075,8 +1048,7 @@ static void refresh(int full_screen)
+ 
+ 	place_cursor(crow, ccol);
+ 
+-	if (!keep_index)
+-		cindex = ccol + offset;
++	cindex = ccol + offset;
+ 
+ 	old_offset = offset;
+ #undef old_offset
+@@ -1131,11 +1103,8 @@ static int readit(void) // read (maybe cursor) key from stdin
+ 	// Wait for input. TIMEOUT = -1 makes read_key wait even
+ 	// on nonblocking stdin.
+ 	// Note: read_key sets errno to 0 on success.
+- again:
+ 	c = safe_read_key(STDIN_FILENO, readbuffer, /*timeout:*/ -1);
+ 	if (c == -1) { // EOF/error
+-		if (errno == EAGAIN) // paranoia
+-			goto again;
+ 		go_bottom_and_clear_to_eol();
+ 		cookmode(); // terminal to "cooked"
+ 		bb_simple_error_msg_and_die("can't read user input");
+@@ -1229,8 +1198,7 @@ static char *get_input_line(const char *prompt)
+ 			if (i <= 0) // user backs up before b-o-l, exit
+ 				break;
+ 			write1(buf);
+-		} else if (c > 0 && c < 256) { // exclude Unicode
+-			// (TODO: need to handle Unicode)
++		} else {
+ 			buf[i] = c;
+ 			buf[++i] = '\0';
+ 			bb_putchar(c);
+@@ -1284,12 +1252,7 @@ static int format_edit_status(void)
+ 	//    current line         percent
+ 	//   -------------    ~~ ----------
+ 	//    total lines            100
+-	if (tot > 0) {
+-		percent = (100 * cur) / tot;
+-	} else {
+-		cur = tot = 0;
+-		percent = 100;
+-	}
++	percent = (100 * cur) / tot;
+ 
+ 	trunc_at = columns < STATUS_BUFFER_LEN-1 ?
+ 		columns : STATUS_BUFFER_LEN-1;
+@@ -1308,7 +1271,7 @@ static int format_edit_status(void)
+ 		(modified_count ? " [Modified]" : ""),
+ 		cur, tot, percent);
+ 
+-	if (ret >= 0 && ret < trunc_at)
++	if (ret < trunc_at)
+ 		return ret;  // it all fit
+ 
+ 	return trunc_at;  // had to truncate
+@@ -1334,7 +1297,7 @@ static void show_status_line(void)
+ 		cnt = format_edit_status();
+ 		cksum = bufsum(status_buffer, cnt);
+ 	}
+-	if (have_status_msg || ((cnt > 0 && last_status_cksum != cksum))) {
++	if (have_status_msg || last_status_cksum != cksum) {
+ 		last_status_cksum = cksum;		// remember if we have seen this line
+ 		go_bottom_and_clear_to_eol();
+ 		write1(status_buffer);
+@@ -1387,24 +1350,18 @@ static void print_literal(char *buf, const char *s)
+ 	char *d;
+ 	unsigned char c;
+ 
+-	if (!s[0])
+-		s = "(NULL)";
+ 
+ 	d = buf;
+ 	for (; *s; s++) {
+ 		c = *s;
+ 		if ((c & 0x80) && !Isprint(c))
+ 			c = '?';
+-		if (c < ' ' || c == 0x7f) {
++		if (c < ' ') {
+ 			*d++ = '^';
+ 			c |= '@'; // 0x40
+-			if (c == 0x7f)
+-				c = '?';
+ 		}
+ 		*d++ = c;
+ 		*d = '\0';
+-		if (d - buf > MAX_INPUT_LEN - 10) // paranoia
+-			break;
+ 	}
+ }
+ static void not_implemented(const char *s)
+@@ -1421,10 +1378,6 @@ static char *text_yank(char *p, char *q, int dest, int buftype)
+ {
+ 	char *oldreg = reg[dest];
+ 	int cnt = q - p;
+-	if (cnt < 0) {		// they are backwards- reverse them
+-		p = q;
+-		cnt = -cnt;
+-	}
+ 	// Don't free register yet.  This prevents the memory allocator
+ 	// from reusing the free block so we can detect if it's changed.
+ 	reg[dest] = xstrndup(p, cnt + 1);
+@@ -1440,10 +1393,6 @@ static char what_reg(void)
+ 	c = 'D';			// default to D-reg
+ 	if (YDreg <= 25)
+ 		c = 'a' + (char) YDreg;
+-	if (YDreg == 26)
+-		c = 'D';
+-	if (YDreg == 27)
+-		c = 'U';
+ 	return c;
+ }
+ 
+@@ -1463,11 +1412,9 @@ static char *swap_context(char *p) // goto new context for '' command make this
+ 	// the current context is in mark[26]
+ 	// the previous context is in mark[27]
+ 	// only swap context if other context is valid
+-	if (text <= mark[27] && mark[27] <= end - 1) {
+-		tmp = mark[27];
+-		mark[27] = p;
+-		mark[26] = p = tmp;
+-	}
++	tmp = mark[27];
++	mark[27] = p;
++	mark[26] = p = tmp;
+ 	return p;
+ }
+ 
+@@ -1499,8 +1446,7 @@ static uintptr_t text_hole_make(char *p, int size)	// at "p", make a 'size' byte
+ {
+ 	uintptr_t bias = 0;
+ 
+-	if (size <= 0)
+-		return bias;
++	
+ 	end += size;		// adjust the new END
+ 	if (end >= (text + text_size)) {
+ 		char *new_text;
+@@ -1540,16 +1486,10 @@ static char *text_hole_delete(char *p, char *q, int undo)
+ 	// assume p <= q
+ 	src = q + 1;
+ 	dest = p;
+-	if (q < p) {		// they are backward- swap them
+-		src = p + 1;
+-		dest = q;
+-	}
+ 	hole_size = q - p + 1;
+ 	cnt = end - src;
+ #if ENABLE_FEATURE_VI_UNDO
+ 	switch (undo) {
+-		case NO_UNDO:
+-			break;
+ 		case ALLOW_UNDO:
+ 			undo_push(p, hole_size, UNDO_DEL);
+ 			break;
+@@ -1561,13 +1501,11 @@ static char *text_hole_delete(char *p, char *q, int undo)
+ 			undo_push(p, hole_size, UNDO_DEL_QUEUED);
+ 			break;
+ # endif
++		default:
++			break;
+ 	}
+ 	modified_count--;
+ #endif
+-	if (src < text || src > end)
+-		goto thd0;
+-	if (dest < text || dest >= end)
+-		goto thd0;
+ 	modified_count++;
+ 	if (src >= end)
+ 		goto thd_atend;	// just delete the end of the buffer
+@@ -1578,7 +1516,6 @@ static char *text_hole_delete(char *p, char *q, int undo)
+ 		dest = end - 1;	// make sure dest in below end-1
+ 	if (end <= text)
+ 		dest = end = text;	// keep pointers valid
+- thd0:
+ 	return dest;
+ }
+ 
+@@ -1639,49 +1576,40 @@ static void undo_push(char *src, unsigned length, int u_type)
+ 	// single-character operations while typing and has the side benefit of letting
+ 	// an undo operation remove chunks of text rather than a single character.
+ 	switch (u_type) {
+-	case UNDO_EMPTY:	// Just in case this ever happens...
+-		return;
+ 	case UNDO_DEL_QUEUED:
+ 		if (length != 1)
+ 			return;	// Only queue single characters
+-		switch (undo_queue_state) {
+-		case UNDO_EMPTY:
+-			undo_queue_state = UNDO_DEL;
+-		case UNDO_DEL:
+-			undo_queue_spos = src;
+-			undo_q++;
+-			undo_queue[CONFIG_FEATURE_VI_UNDO_QUEUE_MAX - undo_q] = *src;
+-			// If queue is full, dump it into an object
+-			if (undo_q == CONFIG_FEATURE_VI_UNDO_QUEUE_MAX)
+-				undo_queue_commit();
+-			return;
+-		case UNDO_INS:
++		if (undo_queue_state == UNDO_INS) {
+ 			// Switch from storing inserted text to deleted text
+ 			undo_queue_commit();
+ 			undo_push(src, length, UNDO_DEL_QUEUED);
+ 			return;
+ 		}
+-		break;
++		undo_queue_state = UNDO_DEL;
++		undo_queue_spos = src;
++		undo_q++;
++		undo_queue[CONFIG_FEATURE_VI_UNDO_QUEUE_MAX - undo_q] = *src;
++		if (undo_q == CONFIG_FEATURE_VI_UNDO_QUEUE_MAX)
++			undo_queue_commit();
++		return;
+ 	case UNDO_INS_QUEUED:
+-		if (length < 1)
+-			return;
+-		switch (undo_queue_state) {
+-		case UNDO_EMPTY:
+-			undo_queue_state = UNDO_INS;
+-			undo_queue_spos = src;
+-		case UNDO_INS:
+-			while (length--) {
+-				undo_q++;	// Don't need to save any data for insertions
+-				if (undo_q == CONFIG_FEATURE_VI_UNDO_QUEUE_MAX)
+-					undo_queue_commit();
+-			}
+-			return;
+-		case UNDO_DEL:
++		if (undo_queue_state == UNDO_DEL) {
+ 			// Switch from storing deleted text to inserted text
+ 			undo_queue_commit();
+ 			undo_push(src, length, UNDO_INS_QUEUED);
+ 			return;
+ 		}
++		if (undo_queue_state == UNDO_EMPTY) {
++			undo_queue_state = UNDO_INS;
++			undo_queue_spos = src;
++		}
++		while (length--) {
++			undo_q++;	// Don't need to save any data for insertions
++			if (undo_q == CONFIG_FEATURE_VI_UNDO_QUEUE_MAX)
++				undo_queue_commit();
++		}
++		return;
++	default:
+ 		break;
+ 	}
+ 	u_type &= ~UNDO_USE_SPOS;
+@@ -1751,9 +1679,7 @@ static void undo_pop(void)
+ 		return;
+ 	}
+ 
+-	switch (undo_entry->u_type) {
+-	case UNDO_DEL:
+-	case UNDO_DEL_CHAIN:
++	if (undo_entry->u_type == UNDO_DEL || undo_entry->u_type == UNDO_DEL_CHAIN) {
+ 		// make hole and put in text that was deleted; deallocate text
+ 		u_start = text + undo_entry->start;
+ 		text_hole_make(u_start, undo_entry->length);
+@@ -1764,9 +1690,7 @@ static void undo_pop(void)
+ 			undo_entry->length, undo_entry->start
+ 		);
+ # endif
+-		break;
+-	case UNDO_INS:
+-	case UNDO_INS_CHAIN:
++	} else {
+ 		// delete what was inserted
+ 		u_start = undo_entry->start + text;
+ 		u_end = u_start - 1 + undo_entry->length;
+@@ -1777,20 +1701,13 @@ static void undo_pop(void)
+ 			undo_entry->length, undo_entry->start
+ 		);
+ # endif
+-		break;
+ 	}
+ 	repeat = 0;
+-	switch (undo_entry->u_type) {
+-	// If this is the end of a chain, lower modification count and refresh display
+-	case UNDO_DEL:
+-	case UNDO_INS:
++	if (undo_entry->u_type == UNDO_DEL || undo_entry->u_type == UNDO_INS) {
+ 		dot = (text + undo_entry->start);
+ 		refresh(FALSE);
+-		break;
+-	case UNDO_DEL_CHAIN:
+-	case UNDO_INS_CHAIN:
++	} else {
+ 		repeat = 1;
+-		break;
+ 	}
+ 	// Deallocate the undo object we just processed
+ 	undo_stack_tail = undo_entry->prev;
+@@ -1811,14 +1728,14 @@ static void undo_pop(void)
+ static void dot_left(void)
+ {
+ 	undo_queue_commit();
+-	if (dot > text && dot[-1] != '\n')
++	if (dot[-1] != '\n')
+ 		dot--;
+ }
+ 
+ static void dot_right(void)
+ {
+ 	undo_queue_commit();
+-	if (dot < end - 1 && *dot != '\n')
++	if (*dot != '\n')
+ 		dot++;
+ }
+ 
+@@ -1921,14 +1838,6 @@ static void dot_scroll(int cnt, int dir)
+ 
+ static char *bound_dot(char *p) // make sure  text[0] <= P < "end"
+ {
+-	if (p >= end && end > text) {
+-		p = end - 1;
+-		indicate_error();
+-	}
+-	if (p < text) {
+-		p = text;
+-		indicate_error();
+-	}
+ 	return p;
+ }
+ 
+@@ -1961,13 +1870,6 @@ static char *yank_delete(char *start, char *stop, int buftype, int yf, int undo)
+ {
+ 	char *p;
+ 
+-	// make sure start <= stop
+-	if (start > stop) {
+-		// they are backwards, reverse them
+-		p = start;
+-		start = stop;
+-		stop = p;
+-	}
+ 	if (buftype == PARTIAL && *start == '\n')
+ 		return start;
+ 	p = start;
+@@ -1987,11 +1889,6 @@ static int file_insert(const char *fn, char *p, int initial)
+ 	int fd, size;
+ 	struct stat statbuf;
+ 
+-	if (p < text)
+-		p = text;
+-	if (p > end)
+-		p = end;
+-
+ 	fd = open(fn, O_RDONLY);
+ 	if (fd < 0) {
+ 		if (!initial)
+@@ -2000,41 +1897,22 @@ static int file_insert(const char *fn, char *p, int initial)
+ 	}
+ 
+ 	// Validate file
+-	if (fstat(fd, &statbuf) < 0) {
+-		status_line_bold_errno(fn);
+-		goto fi;
+-	}
++	fstat(fd, &statbuf);
+ 	if (!S_ISREG(statbuf.st_mode)) {
+ 		status_line_bold("'%s' is not a regular file", fn);
+ 		goto fi;
+ 	}
+-	size = (statbuf.st_size < INT_MAX ? (int)statbuf.st_size : INT_MAX);
++	size = (int)statbuf.st_size;
+ 	p += text_hole_make(p, size);
+ 	cnt = full_read(fd, p, size);
+-	if (cnt < 0) {
+-		status_line_bold_errno(fn);
+-		p = text_hole_delete(p, p + size - 1, NO_UNDO);	// un-do buffer insert
+-	} else if (cnt < size) {
+-		// There was a partial read, shrink unused space
+-		p = text_hole_delete(p + cnt, p + size - 1, NO_UNDO);
+-		status_line_bold("can't read '%s'", fn);
+-	}
+ # if ENABLE_FEATURE_VI_UNDO
+-	else {
+-		undo_push_insert(p, size, ALLOW_UNDO);
+-	}
++	undo_push_insert(p, size, ALLOW_UNDO);
+ # endif
+  fi:
+ 	close(fd);
+ 
+ #if ENABLE_FEATURE_VI_READONLY
+-	if (initial
+-	 && ((access(fn, W_OK) < 0) ||
+-		// root will always have access()
+-		// so we check fileperms too
+-		!(statbuf.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH))
+-	    )
+-	) {
++	if (initial && !(statbuf.st_mode & (S_IWUSR | S_IWGRP | S_IWOTH))) {
+ 		SET_READONLY_FILE(readonly_mode);
+ 	}
+ #endif
+@@ -2058,7 +1936,7 @@ static char *find_pair(char *p, const char c)
+ 	level = 1;
+ 	for (;;) {
+ 		p += dir;
+-		if (p < text || p >= end)
++		if (p < text)
+ 			return NULL;
+ 		if (*p == c)
+ 			level++;	// increase pair levels
+@@ -2142,14 +2020,14 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
+ 		cmdcnt = 0;
+ 		end_cmd_q();	// stop adding to q
+ 		last_status_cksum = 0;	// force status update
+-		if ((dot > text) && (p[-1] != '\n')) {
++		if (p[-1] != '\n') {
+ 			p--;
+ 		}
+ #if ENABLE_FEATURE_VI_SETOPTS
+ 		if (autoindent) {
+ 			len = indent_len(bol);
+ 			col = get_column(bol + len);
+-			if (len && col == indentcol && bol[len] == '\n') {
++			if (len && col == indentcol) {
+ 				// remove autoindent from otherwise empty line
+ 				text_hole_delete(bol, bol + len - 1, undo);
+ 				p = bol;
+@@ -2160,18 +2038,13 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
+ 		char *r = bol + indent_len(bol);
+ 		int prev = prev_tabstop(get_column(r));
+ 		while (r > bol && get_column(r) > prev) {
+-			if (p > bol)
+-				p--;
++			p--;
+ 			r--;
+ 			r = text_hole_delete(r, r, ALLOW_UNDO_QUEUED);
+ 		}
+ 
+ #if ENABLE_FEATURE_VI_SETOPTS
+-		if (autoindent && indentcol && r == end_line(p)) {
+-			// record changed size of autoindent
+-			indentcol = get_column(p);
+-			return p;
+-		}
++		
+ #endif
+ #if ENABLE_FEATURE_VI_SETOPTS
+ 	} else if (c == '\t' && expandtab) {	// expand tab
+@@ -2195,7 +2068,7 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
+ 				undo_pop();
+ #endif
+ 			}
+-		} else if (p > text) {
++		} else {
+ 			p--;
+ 			p = text_hole_delete(p, p, ALLOW_UNDO_QUEUED);	// shrink buffer 1 char
+ 		}
+@@ -2242,7 +2115,7 @@ static char *char_insert(char *p, char c, int undo) // insert the char c at 'p'
+ 				// only record indent if in insert/replace mode or for
+ 				// the 'o'/'O'/'cc' commands, which are switched to
+ 				// insert mode early.
+-				indentcol = cmd_mode != 0 ? col : 0;
++				indentcol = col;
+ 				if (expandtab) {
+ 					ntab = 0;
+ 					nspc = col;
+@@ -2374,12 +2247,6 @@ static int file_write(char *fn, char *first, char *last)
+ 	cnt = last - first + 1;
+ 	charcnt = full_write(fd, first, cnt);
+ 	ftruncate(fd, charcnt);
+-	if (charcnt == cnt) {
+-		// good write
+-		//modified_count = FALSE;
+-	} else {
+-		charcnt = 0;
+-	}
+ 	close(fd);
+ 	return charcnt;
+ }
+@@ -2471,8 +2338,6 @@ static char *char_search(char *p, const char *pat, int dir_and_range)
+ 		}
+ 	} else { //BACK
+ 		stop = text;	// assume range is text..p
+-		if (range == LIMITED)
+-			stop = prev_line(p);	// range is to prev line
+ 		for (start = p - len; start >= stop; start--) {
+ 			if (mycmp(start, pat, len) == 0) {
+ 				return start;
+@@ -2503,10 +2368,8 @@ static char *get_one_address(char *p, int *result, int *valid)
+ 	sign = 0;
+ 	for (;;) {
+ 		if (isblank(*p)) {
+-			if (got_addr) {
+-				addr += sign;
+-				sign = 0;
+-			}
++			addr += sign;
++			sign = 0;
+ 			p++;
+ 		} else if (!got_addr && *p == '.') {	// the current line
+ 			p++;
+@@ -2631,7 +2494,7 @@ static char *get_address(char *p, int *b, int *e, unsigned *got)
+ 			*e = addr;
+ 			*got = (*got << 1) | 1;
+ 			state = GET_SEPARATOR;
+-		} else if (state == GET_SEPARATOR && (*p == ',' || *p == ';')) {
++		} else if (*p == ',' || *p == ';') {
+ 			if (*p == ';')
+ 				dot = find_line(*e);
+ 			p++;
+@@ -2896,8 +2759,8 @@ static void colon(char *buf)
+ 	// get the COMMAND into cmd[]
+ 	safe_strncpy(cmd, buf, sizeof(cmd));
+ 	skip_non_whitespace(cmd)[0] = '\0';
+-	useforce = last_char_is(cmd, '!');
+-	if (useforce && useforce > cmd)
++	useforce = (cmd[0] == '!') ? NULL : last_char_is(cmd, '!');
++	if (useforce)
+ 		*useforce = '\0';   // "CMD!" -> "CMD" (unless single "!")
+ 	// find ARGuments
+ 	args = skip_whitespace(skip_non_whitespace(buf));
+@@ -2908,9 +2771,8 @@ static void colon(char *buf)
+ 	r = end - 1;
+ 	if (GOT_ADDRESS) { // at least one addr was given, get its details
+ 		int lines;
+-		if (e < 0
+-		 || e > (lines = count_lines(text, end - 1))
+-		) {
++		lines = count_lines(text, end - 1);
++		if (e > lines) {
+ 			status_line_bold("Invalid range");
+ 			goto ret;
+ 		}
+@@ -2923,7 +2785,7 @@ static void colon(char *buf)
+ 		} else {
+ 			// we were given two addrs.  change the
+ 			// start pointer to the addr given by user.
+-			if (b < 0 || b > lines || b > e) {
++			if (b > e) {
+ 				status_line_bold("Invalid range");
+ 				goto ret;
+ 			}
+@@ -2934,10 +2796,8 @@ static void colon(char *buf)
+ 	// ------------ now look for the command ------------
+ 	cmdlen = strlen(cmd);
+ 	if (cmdlen == 0) {	// ":123<enter>" - goto line #123
+-		if (e >= 0) {
+-			dot = find_line(e);	// what line is #e
+-			dot_skip_over_ws();
+-		}
++		dot = find_line(e);	// what line is #e
++		dot_skip_over_ws();
+ 	}
+ # if ENABLE_FEATURE_ALLOW_EXEC
+ 	else if (cmd[0] == '!') {	// ":!CMD" - run shell CMD
+@@ -2983,8 +2843,6 @@ static void colon(char *buf)
+ 		if (args[0]) {
+ 			// the user supplied a file name
+ 			fn = expand_args(args);
+-			if (fn == NULL)
+-				goto ret;
+ 		} else if (current_filename == NULL) {
+ 			// no user file name, no current name- punt
+ 			status_line_bold("No current filename");
+@@ -3022,8 +2880,6 @@ static void colon(char *buf)
+ 		if (args[0]) {
+ 			// user wants a new filename
+ 			exp = expand_args(args);
+-			if (exp == NULL)
+-				goto ret;
+ 			update_filename(exp);
+ 		} else {
+ 			// user wants file status info
+@@ -3045,7 +2901,7 @@ static void colon(char *buf)
+ 		have_status_msg = 1;
+ 		dst = status_buffer;
+ #define MAXPRINT (sizeof(ESC_BOLD_TEXT "^?" ESC_NORM_TEXT) + 1)
+-		while (q <= r && dst < status_buffer + STATUS_BUFFER_LEN - MAXPRINT) {
++		while (dst < status_buffer + STATUS_BUFFER_LEN - MAXPRINT) {
+ 			char c;
+ 			int c_is_no_print;
+ 
+@@ -3116,8 +2972,6 @@ static void colon(char *buf)
+ 		if (args[0]) {
+ 			// the user supplied a file name
+ 			fn = expand_args(args);
+-			if (fn == NULL)
+-				goto ret;
+ 			init_filename(fn);
+ 		} else if (current_filename == NULL) {
+ 			// no user file name, no current name- punt
+@@ -3358,8 +3212,6 @@ static void colon(char *buf)
+ 			struct stat statbuf;
+ 
+ 			exp = expand_args(args);
+-			if (exp == NULL)
+-				goto ret;
+ 			if (!useforce
+ 			 && (fn == NULL || strcmp(fn, exp) != 0)
+ 			 && stat(exp, &statbuf) == 0
+@@ -3371,7 +3223,7 @@ static void colon(char *buf)
+ 			init_filename(fn);
+ 		}
+ # if ENABLE_FEATURE_VI_READONLY
+-		else if (readonly_mode && !useforce && fn) {
++		else if (readonly_mode && !useforce) {
+ 			status_line_bold("'%s' is read only", fn);
+ 			goto ret;
+ 		}
+@@ -3400,26 +3252,24 @@ static void colon(char *buf)
+ 			// how many lines written
+ 			int lines = count_lines(q, q + l - 1);
+ 			status_line("'%s' %uL, %uC", fn, lines, l);
+-			if (l == size) {
+-				if (q == text && q + l == end) {
+-					modified_count = 0;
+-					last_modified_count = -1;
+-				}
+-				if (cmd[1] == 'n') {
+-					editing = 0;
+-				} else if (cmd[0] == 'x' || cmd[1] == 'q') {
+-					// are there other files to edit?
+-					int n = cmdline_filecnt - optind - 1;
+-					if (n > 0) {
+-						if (!useforce) {
+-							status_line_bold("%u more file(s) to edit", n);
+-							goto ret;
+-						}
+-						// force end of argv list
+-						optind = cmdline_filecnt;
++			if (q + l == end) {
++				modified_count = 0;
++				last_modified_count = -1;
++			}
++			if (cmd[1] == 'n') {
++				editing = 0;
++			} else if (cmd[0] == 'x' || cmd[1] == 'q') {
++				// are there other files to edit?
++				int n = cmdline_filecnt - optind - 1;
++				if (n > 0) {
++					if (!useforce) {
++						status_line_bold("%u more file(s) to edit", n);
++						goto ret;
+ 					}
+-					editing = 0;
++					// force end of argv list
++					optind = cmdline_filecnt;
+ 				}
++				editing = 0;
+ 			}
+ 		}
+ # if ENABLE_FEATURE_VI_YANKMARK
+@@ -3470,11 +3320,11 @@ static int st_test(char *p, int type, int dir, char *tested)
+ 
+ 	if (type == S_BEFORE_WS) {
+ 		c = ci;
+-		test = (!isspace(c) || c == '\n');
++		test = !isblank(c);
+ 	}
+ 	if (type == S_TO_WS) {
+ 		c = c0;
+-		test = (!isspace(c) || c == '\n');
++		test = !isblank(c);
+ 	}
+ 	if (type == S_OVER_WS) {
+ 		c = c0;
+@@ -3500,9 +3350,7 @@ static char *skip_thing(char *p, int linecnt, int dir, int type)
+ 		// make sure we limit search to correct number of lines
+ 		if (c == '\n' && --linecnt < 1)
+ 			break;
+-		if (dir >= 0 && p >= end - 1)
+-			break;
+-		if (dir < 0 && p <= text)
++		if (p >= end - 1 || p <= text)
+ 			break;
+ 		p += dir;		// move to next char
+ 	}
+@@ -3520,30 +3368,6 @@ static void winch_handler(int sig UNUSED_PARAM)
+ 	redraw(TRUE);		// re-draw the screen
+ 	errno = save_errno;
+ }
+-static void tstp_handler(int sig UNUSED_PARAM)
+-{
+-	int save_errno = errno;
+-
+-	// ioctl inside cookmode() was seen to generate SIGTTOU,
+-	// stopping us too early. Prevent that:
+-	signal(SIGTTOU, SIG_IGN);
+-
+-	go_bottom_and_clear_to_eol();
+-	cookmode(); // terminal to "cooked"
+-
+-	// stop now
+-	//signal(SIGTSTP, SIG_DFL);
+-	//raise(SIGTSTP);
+-	raise(SIGSTOP); // avoid "dance" with TSTP handler - use SIGSTOP instead
+-	//signal(SIGTSTP, tstp_handler);
+-
+-	// we have been "continued" with SIGCONT, restore screen and termios
+-	rawmode(); // terminal to "raw"
+-	last_status_cksum = 0; // force status update
+-	redraw(TRUE); // re-draw the screen
+-
+-	errno = save_errno;
+-}
+ static void int_handler(int sig)
+ {
+ 	signal(SIGINT, int_handler);
+@@ -3556,7 +3380,7 @@ static void do_cmd(int c);
+ static int at_eof(const char *s)
+ {
+ 	// does 's' point to end of file, even with no terminating newline?
+-	return ((s == end - 2 && s[1] == '\n') || s == end - 1);
++	return (s >= end - 2);
+ }
+ 
+ static int find_range(char **start, char **stop, int cmd)
+@@ -3602,7 +3426,7 @@ static int find_range(char **start, char **stop, int cmd)
+ 		// step back one char, but not if we're at end of file,
+ 		// or if we are at EOF and search was for 'w' and we're at
+ 		// the start of a 'W' word.
+-		if (dot > p && (!at_eof(dot) || (c == 'w' && ispunct(*dot))))
++		if (!at_eof(dot) || ispunct(*dot))
+ 			dot--;
+ 		t = dot;
+ 		// don't include trailing WS as part of word
+@@ -3611,7 +3435,7 @@ static int find_range(char **start, char **stop, int cmd)
+ 				t = dot;
+ 		}
+ 		// for non-change operations WS after NL is not part of word
+-		if (cmd != 'c' && dot != t && *dot != '\n')
++		if (cmd != 'c' && dot != t)
+ 			dot = t;
+ 	} else if (strchr("GHL+-gjk'\r\n", c)) {
+ 		// these operate on whole lines
+@@ -3648,13 +3472,11 @@ static int find_range(char **start, char **stop, int cmd)
+ 		if (strchr("^0bBFThnN/?|\b\177", c)) {
+ 			q--;
+ 		} else if (strchr("{}", c)) {
+-			buftype = (p == begin_line(p) && (*q == '\n' || at_eof(q))) ?
++			buftype = (p == begin_line(p) && *q == '\n') ?
+ 							WHOLE : MULTI;
+-			if (!at_eof(q)) {
++			q--;
++			if (p != begin_line(p))
+ 				q--;
+-				if (q > p && p != begin_line(p))
+-					q--;
+-			}
+ 		}
+ 	}
+ 
+@@ -3732,11 +3554,9 @@ static void do_cmd(int c)
+ 			cmd_mode = 1;	// convert to insert
+ 			undo_queue_commit();
+ 		} else {
+-			if (1 <= c || Isprint(c)) {
+-				if (c != 27 && !isbackspace(c))
+-					dot = yank_delete(dot, dot, PARTIAL, YANKDEL, ALLOW_UNDO);
+-				dot = char_insert(dot, c, ALLOW_UNDO_CHAIN);
+-			}
++			if (c != 27 && !isbackspace(c))
++				dot = yank_delete(dot, dot, PARTIAL, YANKDEL, ALLOW_UNDO);
++			dot = char_insert(dot, c, ALLOW_UNDO_CHAIN);
+ 			goto dc1;
+ 		}
+ 	}
+@@ -3744,9 +3564,7 @@ static void do_cmd(int c)
+ 		// hitting "Insert" twice means "R" replace mode
+ 		if (c == KEYCODE_INSERT) goto dc5;
+ 		// insert the char c at "dot"
+-		if (1 <= c || Isprint(c)) {
+-			dot = char_insert(dot, c, ALLOW_UNDO_QUEUED);
+-		}
++		dot = char_insert(dot, c, ALLOW_UNDO_QUEUED);
+ 		goto dc1;
+ 	}
+ 
+@@ -3837,7 +3655,7 @@ static void do_cmd(int c)
+ 			q = p;
+ 		} while (--cmdcnt > 0);
+ 		dot = q;
+-		if (c == 13 || c == '+') {
++		if (c == '+') {
+ 			dot_skip_over_ws();
+ 		} else {
+ 			// try to stay in saved column
+@@ -3856,8 +3674,7 @@ static void do_cmd(int c)
+ 		dot_scroll(1, -1);
+ 		break;
+ 	case 27:			// esc
+-		if (cmd_mode == 0)
+-			indicate_error();
++		indicate_error();
+ 		cmd_mode = 0;	// stop inserting
+ 		undo_queue_commit();
+ 		end_cmd_q();
+@@ -3885,7 +3702,7 @@ static void do_cmd(int c)
+ 			c1 = (c1 - 'a');
+ 			// get the b-o-l
+ 			q = mark[c1];
+-			if (text <= q && q < end) {
++			if (q != NULL) {
+ 				dot = q;
+ 				dot_begin();	// go to B-o-l
+ 				dot_skip_over_ws();
+@@ -3960,17 +3777,15 @@ static void do_cmd(int c)
+ 		end_cmd_q();	// stop adding to q
+ 		break;
+ 	case 'U':			// U- Undo; replace current line with original version
+-		if (reg[Ureg] != NULL) {
+-			p = begin_line(dot);
+-			q = end_line(dot);
+-			p = text_hole_delete(p, q, ALLOW_UNDO);	// delete cur line
+-			p += string_insert(p, reg[Ureg], ALLOW_UNDO_CHAIN);	// insert orig line
+-			dot = p;
+-			dot_skip_over_ws();
++		p = begin_line(dot);
++		q = end_line(dot);
++		p = text_hole_delete(p, q, ALLOW_UNDO);	// delete cur line
++		p += string_insert(p, reg[Ureg], ALLOW_UNDO_CHAIN);	// insert orig line
++		dot = p;
++		dot_skip_over_ws();
+ # if ENABLE_FEATURE_VI_YANKMARK && ENABLE_FEATURE_VI_VERBOSE_STATUS
+-			yank_status("Undo", reg[Ureg], 1);
++		yank_status("Undo", reg[Ureg], 1);
+ # endif
+-		}
+ 		break;
+ #endif /* FEATURE_VI_YANKMARK */
+ #if ENABLE_FEATURE_VI_UNDO
+@@ -3990,7 +3805,7 @@ static void do_cmd(int c)
+ 		keep_index = TRUE;
+ 		break;
+ 	case '%':			// %- find matching char of pair () [] {}
+-		for (q = dot; q < end && *q != '\n'; q++) {
++		for (q = dot; *q != '\n'; q++) {
+ 			if (strchr("()[]{}", *q) != NULL) {
+ 				// we found half of a pair
+ 				p = find_pair(q, *q);
+@@ -4041,8 +3856,7 @@ static void do_cmd(int c)
+ 		if (!q[0])	// user changed mind and erased the "/"-  do nothing
+ 			break;
+ 		if (!q[1]) {	// if no pat re-use old pat
+-			if (last_search_pattern[0])
+-				last_search_pattern[0] = c;
++			last_search_pattern[0] = c;
+ 		} else {	// strlen(q) > 1: new pat- save it and find
+ 			free(last_search_pattern);
+ 			last_search_pattern = xstrdup(q);
+@@ -4137,8 +3951,7 @@ static void do_cmd(int c)
+ 				if (*p == '\t') {
+ 					// shrink buffer 1 char
+ 					text_hole_delete(p, p, allow_undo);
+-				} else if (*p == ' ') {
+-					// we should be calculating columns, not just SPACE
++				} else {
+ 					for (j = 0; *p == ' ' && j < tabstop; j++) {
+ 						text_hole_delete(p, p, allow_undo);
+ #if ENABLE_FEATURE_VI_UNDO
+@@ -4146,7 +3959,7 @@ static void do_cmd(int c)
+ #endif
+ 					}
+ 				}
+-			} else if (/* c == '>' && */ p != end_line(p)) {
++			} else {
+ 				// shift right -- add tab or tabstop spaces on non-empty lines
+ 				char_insert(p, '\t', allow_undo);
+ 			}
+@@ -4190,8 +4003,7 @@ static void do_cmd(int c)
+ 		if (c == 'C')
+ 			goto dc_i;	// start inserting
+ #if ENABLE_FEATURE_VI_DOT_CMD
+-		if (c == 'D')
+-			end_cmd_q();	// stop adding to q
++		end_cmd_q();	// stop adding to q
+ #endif
+ 		break;
+ 	case 'g': // 'gg' goto a line number (vim) (default: very first line)
+@@ -4304,8 +4116,7 @@ static void do_cmd(int c)
+ 		rstart = dot;
+ 		break;
+ 	case KEYCODE_DELETE:
+-		if (dot < end - 1)
+-			dot = yank_delete(dot, dot, PARTIAL, YANKDEL, ALLOW_UNDO);
++		dot = yank_delete(dot, dot, PARTIAL, YANKDEL, ALLOW_UNDO);
+ 		break;
+ 	case 'X':			// X- delete char before dot
+ 	case 'x':			// x- delete the current char
+@@ -4341,7 +4152,7 @@ static void do_cmd(int c)
+ 			break;
+ 		}
+ 		if (modified_count) {
+-			if (ENABLE_FEATURE_VI_READONLY && readonly_mode && current_filename) {
++			if (ENABLE_FEATURE_VI_READONLY && readonly_mode) {
+ 				status_line_bold("'%s' is read only", current_filename);
+ 				break;
+ 			}
+@@ -4349,7 +4160,7 @@ static void do_cmd(int c)
+ 			if (cnt < 0) {
+ 				if (cnt == -1)
+ 					status_line_bold("Write error: "STRERROR_FMT STRERROR_ERRNO);
+-			} else if (cnt == (end - 1 - text + 1)) {
++			} else {
+ 				editing = 0;
+ 			}
+ 		} else {
+@@ -4374,13 +4185,13 @@ static void do_cmd(int c)
+ 		if (c == 'b')
+ 			dir = BACK;
+ 		do {
+-			if ((dot + dir) < text || (dot + dir) > end - 1)
++			if ((dot + dir) < text)
+ 				break;
+ 			dot += dir;
+ 			if (isspace(*dot)) {
+ 				dot = skip_thing(dot, (c == 'e') ? 2 : 1, dir, S_OVER_WS);
+ 			}
+-			if (isalnum(*dot) || *dot == '_') {
++			if (isalnum(*dot)) {
+ 				dot = skip_thing(dot, 1, dir, S_END_ALNUM);
+ 			} else if (ispunct(*dot)) {
+ 				dot = skip_thing(dot, 1, dir, S_END_PUNCT);
+@@ -4425,7 +4236,7 @@ static void do_cmd(int c)
+ 				dot = char_insert(dot, '\n', ALLOW_UNDO_CHAIN);
+ 				// on the last line of file don't move to prev line,
+ 				// handled in char_insert() if autoindent is enabled
+-				if (dot != (end-1) && !autoindent) {
++				if (!autoindent) {
+ 					dot_prev();
+ 				}
+ 			} else if (c == 'd') {
+@@ -4494,8 +4305,7 @@ static void do_cmd(int c)
+ 			} else if (ispunct(*dot)) {	// we are on PUNCT
+ 				dot = skip_thing(dot, 1, FORWARD, S_END_PUNCT);
+ 			}
+-			if (dot < end - 1)
+-				dot++;		// move over word
++			dot++;		// move over word
+ 			if (isspace(*dot)) {
+ 				dot = skip_thing(dot, 2, FORWARD, S_OVER_WS);
+ 			}
+@@ -4519,7 +4329,7 @@ static void do_cmd(int c)
+ #if ENABLE_FEATURE_VI_UNDO
+ 			if (isalpha(*dot)) {
+ 				undo_push(dot, 1, undo_del);
+-				*dot = islower(*dot) ? toupper(*dot) : tolower(*dot);
++				*dot ^= 0x20;
+ 				undo_push(dot, 1, UNDO_INS_CHAIN);
+ 				undo_del = UNDO_DEL_CHAIN;
+ 			}
+@@ -4564,10 +4374,7 @@ static void do_cmd(int c)
+ 		char_insert(text, '\n', NO_UNDO);	// start empty buf with dummy line
+ 		dot = text;
+ 	}
+-	// it is OK for dot to exactly equal to end, otherwise check dot validity
+-	if (dot != end) {
+-		dot = bound_dot(dot);	// make sure "dot" is valid
+-	}
++	dot = bound_dot(dot);	// make sure "dot" is valid
+ #if ENABLE_FEATURE_VI_YANKMARK
+ 	if (dot != orig_dot)
+ 		check_context(c);	// update the current context
+@@ -4815,9 +4622,9 @@ static void edit_file(char *fn)
+ 	rawmode();
+ 	rows = 24;
+ 	columns = 80;
+-	IF_FEATURE_VI_ASK_TERMINAL(G.get_rowcol_error =) query_screen_dimensions();
++	query_screen_dimensions();
+ #if ENABLE_FEATURE_VI_ASK_TERMINAL
+-	if (G.get_rowcol_error /* TODO? && no input on stdin */) {
++	{
+ 		uint64_t k;
+ 		write1(ESC"[999;999H" ESC"[6n");
+ 		fflush_all();
+@@ -4850,7 +4657,6 @@ static void edit_file(char *fn)
+ 
+ #if ENABLE_FEATURE_VI_USE_SIGNALS
+ 	signal(SIGWINCH, winch_handler);
+-	signal(SIGTSTP, tstp_handler);
+ 	sig = sigsetjmp(restart, 1);
+ 	if (sig != 0) {
+ 		screenbegin = dot = text;
+@@ -4918,7 +4724,7 @@ static void edit_file(char *fn)
+ 		// poll to see if there is input already waiting. if we are
+ 		// not able to display output fast enough to keep up, skip
+ 		// the display update until we catch up with input.
+-		if (!readbuffer[0] && mysleep(0) == 0) {
++		if (mysleep(0) == 0) {
+ 			// no input pending - so update output
+ 			refresh(FALSE);
+ 			show_status_line();
+@@ -5018,9 +4824,7 @@ int vi_main(int argc, char **argv)
+ 
+ 				// .exrc must belong to and only be writable by user
+ 				if (stat(exrc, &st) == 0) {
+-					if ((st.st_mode & (S_IWGRP|S_IWOTH)) == 0
+-					 && st.st_uid == getuid()
+-					) {
++					if ((st.st_mode & (S_IWGRP|S_IWOTH)) == 0) {
+ 						cmds = xmalloc_open_read_close(exrc, NULL);
+ 					} else {
+ 						status_line_bold(".exrc: permission denied");
+diff --git a/findutils/find.c b/findutils/find.c
+index b876fec..9abc878 100644
+--- a/findutils/find.c
++++ b/findutils/find.c
+@@ -586,54 +586,14 @@ static char *strcpy_upcase(char *dst, const char *src)
+ 
+ ACTF(name)
+ {
+-	int r;
+ 	const char *tmp = bb_basename(fileName);
+-	/* GNU findutils: find DIR/ -name DIR
+-	 * prints "DIR/" (DIR// prints "DIR//" etc).
+-	 * Need to strip trailing "/".
+-	 * Such names can come only from top-level names, but
+-	 * we can't do this before recursive_action() call,
+-	 * since then "find FILE/ -name FILE"
+-	 * would also work (on non-directories), which is wrong.
+-	 */
+-	char *trunc_slash = NULL;
+-
+-	if (*tmp == '\0') {
+-		/* "foo/bar/[//...]" */
+-		while (tmp != fileName && tmp[-1] == '/')
+-			tmp--;
+-		if (tmp == fileName) { /* entire fileName is "//.."? */
+-			/* yes, convert "//..." to "/"
+-			 * Testcases:
+-			 * find / -maxdepth 1 -name /: prints /
+-			 * find // -maxdepth 1 -name /: prints //
+-			 * find / -maxdepth 1 -name //: prints nothing
+-			 * find // -maxdepth 1 -name //: prints nothing
+-			 */
+-			if (tmp[1])
+-				trunc_slash = (char*)tmp + 1;
+-		} else {
+-			/* no, it's "foo/bar/[//...]", go back to 'b' */
+-			trunc_slash = (char*)tmp;
+-			while (tmp != fileName && tmp[-1] != '/')
+-				tmp--;
+-		}
+-	}
+-
+-	/* Was using FNM_PERIOD flag too,
+-	 * but somewhere between 4.1.20 and 4.4.0 GNU find stopped using it.
+-	 * find -name '*foo' should match .foo too:
+-	 */
+-	if (trunc_slash) *trunc_slash = '\0';
+ #if FNM_CASEFOLD
+-	r = fnmatch(ap->pattern, tmp, (ap->iname ? FNM_CASEFOLD : 0));
++	return fnmatch(ap->pattern, tmp, (ap->iname ? FNM_CASEFOLD : 0)) == 0;
+ #else
+ 	if (ap->iname)
+ 		tmp = strcpy_upcase(alloca(strlen(tmp) + 1), tmp);
+-	r = fnmatch(ap->pattern, tmp, 0);
++	return fnmatch(ap->pattern, tmp, 0) == 0;
+ #endif
+-	if (trunc_slash) *trunc_slash = '/';
+-	return r == 0;
+ }
+ 
+ #if ENABLE_FEATURE_FIND_PATH
+@@ -1015,27 +975,10 @@ static int FAST_FUNC fileAction(
+ 		struct stat *statbuf)
+ {
+ 	int r;
+-	int same_fs = 1;
+-
+-#if ENABLE_FEATURE_FIND_XDEV
+-	if (S_ISDIR(statbuf->st_mode) && G.xdev_count) {
+-		int i;
+-		for (i = 0; i < G.xdev_count; i++) {
+-			if (G.xdev_dev[i] == statbuf->st_dev)
+-				goto found;
+-		}
+-		//bb_error_msg("'%s': not same fs", fileName);
+-		same_fs = 0;
+- found: ;
+-	}
+-#endif
+ 
+ #if ENABLE_FEATURE_FIND_MAXDEPTH
+-	if (state->depth < G.minmaxdepth[0]) {
+-		if (same_fs)
+-			return TRUE; /* skip this, continue recursing */
+-		return SKIP; /* stop recursing */
+-	}
++	if (state->depth < G.minmaxdepth[0])
++		return TRUE; /* skip this, continue recursing */
+ 	if (state->depth > G.minmaxdepth[1])
+ 		return SKIP; /* stop recursing */
+ #endif
+@@ -1045,21 +988,11 @@ static int FAST_FUNC fileAction(
+ 	if ((r & TRUE) && G.need_print)
+ 		puts(fileName);
+ 
+-#if ENABLE_FEATURE_FIND_MAXDEPTH
+-	if (S_ISDIR(statbuf->st_mode)) {
+-		if (state->depth == G.minmaxdepth[1])
+-			return SKIP;
+-	}
+-#endif
+-	/* -xdev stops on mountpoints, but AFTER mountpoit itself
+-	 * is processed as usual */
+-	if (!same_fs) {
+-		return SKIP;
+-	}
++
+ 
+ 	/* Cannot return 0: our caller, recursive_action(),
+ 	 * will perror() and skip dirs (if called on dir) */
+-	return (r & SKIP) ? SKIP : TRUE;
++	return TRUE;
+ }
+ 
+ 
+diff --git a/findutils/grep.c b/findutils/grep.c
+index 99220f6..e6771c0 100644
+--- a/findutils/grep.c
++++ b/findutils/grep.c
+@@ -740,6 +740,13 @@ static int FAST_FUNC file_action_grep(struct recursive_state *state UNUSED_PARAM
+ 	return 1;
+ }
+ 
++static int FAST_FUNC dir_action_grep(struct recursive_state *state UNUSED_PARAM,
++		const char *filename UNUSED_PARAM,
++		struct stat *statbuf UNUSED_PARAM)
++{
++	return 1;
++}
++
+ static int grep_dir(const char *dir)
+ {
+ 	int matched = 0;
+@@ -750,7 +757,7 @@ static int grep_dir(const char *dir)
+ 		| ACTION_DEPTHFIRST
+ 		| 0,
+ 		/* fileAction= */ file_action_grep,
+-		/* dirAction= */ NULL,
++		/* dirAction= */ dir_action_grep,
+ 		/* userData= */ &matched
+ 	);
+ 	return matched;
+@@ -805,9 +812,6 @@ int grep_main(int argc UNUSED_PARAM, char **argv)
+ 		lines_before = 0;
+ 		lines_after = 0;
+ 	} else if (lines_before > 0) {
+-		if (lines_before > INT_MAX / sizeof(long long))
+-			lines_before = INT_MAX / sizeof(long long);
+-		/* overflow in (lines_before * sizeof(x)) is prevented (above) */
+ 		before_buf = xzalloc(lines_before * sizeof(before_buf[0]));
+ 		IF_EXTRA_COMPAT(before_buf_size = xzalloc(lines_before * sizeof(before_buf_size[0]));)
+ 	}
+diff --git a/findutils/xargs.c b/findutils/xargs.c
+index 890c375..5876b94 100644
+--- a/findutils/xargs.c
++++ b/findutils/xargs.c
+@@ -253,19 +253,10 @@ static int xargs_exec(void)
+ 	 * 127 if the command is not found
+ 	 * 1 if some other error occurred."""
+ 	 */
+-	if (status < 0) {
+-		bb_simple_perror_msg(G.args[0]);
+-		status = (errno == ENOENT) ? 127 : 126;
+-	}
+-	else if (status >= 0x180) {
+-		bb_error_msg("'%s' terminated by signal %u",
+-			G.args[0], status - 0x180);
+-		status = 125;
+-	}
+-	else if (status != 0) {
++	if (status != 0) {
+ 		if (status == 255) {
+ 			bb_error_msg("%s: exited with status 255; aborting", G.args[0]);
+-			status = 124;
++			G.xargs_exitcode = 124;
+ 			goto ret;
+ 		}
+ 		/* "123 if any invocation of the command exited with status 1-125"
+@@ -276,8 +267,6 @@ static int xargs_exec(void)
+ 		status = 0;
+ 	}
+  ret:
+-	if (status != 0)
+-		G.xargs_exitcode = status;
+ 	if (option_mask32 & OPT_STDIN_TTY)
+ 		xdup2(G.fd_stdin, STDIN_FILENO);
+ 	return status;
+@@ -559,17 +548,8 @@ static char* FAST_FUNC process_stdin_with_replace(int n_max_chars, int n_max_arg
+  */
+ static int xargs_ask_confirmation(void)
+ {
+-	FILE *tty_stream;
+-	int r;
+-
+-	tty_stream = xfopen_for_read(CURRENT_TTY);
+-
+ 	fputs(" ?...", stderr);
+-	r = bb_ask_y_confirmation_FILE(tty_stream);
+-
+-	fclose(tty_stream);
+-
+-	return r;
++	return bb_ask_y_confirmation();
+ }
+ #else
+ # define xargs_ask_confirmation() 1
+@@ -673,9 +653,7 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
+ 	 * in the System Interfaces volume of IEEE Std 1003.1-2001)
+ 	 * shall not exceed {ARG_MAX}-2048 bytes".
+ 	 */
+-	n_max_chars = bb_arg_max();
+-	if (n_max_chars > 32 * 1024)
+-		n_max_chars = 32 * 1024;
++	n_max_chars = 32 * 1024;
+ 	/*
+ 	 * POSIX suggests substracting 2048 bytes from sysconf(_SC_ARG_MAX)
+ 	 * so that the process may safely modify its environment.
+@@ -737,7 +715,7 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
+ 	}
+ 
+ 	if (opt & OPT_STDIN_TTY) {
+-		G.fd_tty = xopen(CURRENT_TTY, O_RDONLY);
++		G.fd_tty = xopen(bb_dev_null, O_RDONLY);
+ 		close_on_exec_on(G.fd_tty);
+ 		G.fd_stdin = dup(STDIN_FILENO);
+ 		close_on_exec_on(G.fd_stdin);
+@@ -767,7 +745,7 @@ int xargs_main(int argc UNUSED_PARAM, char **argv)
+ 				fmt = " %s";
+ 			}
+ 			if (!(opt & OPT_INTERACTIVE))
+-				bb_putchar_stderr('\n');
++				full_write2_str("\n");
+ 		}
+ 
+ 		if (!(opt & OPT_INTERACTIVE) || xargs_ask_confirmation()) {

@@ -1,120 +1,97 @@
 #!/usr/bin/env python3
-import sys
+"""BusyBox Kconfig symbol scanner and ``autoconf.h`` header generator.
+
+Scans the BusyBox source tree in a single deterministic directory pass to
+collect all ``CONFIG_*``, ``ENABLE_*``, ``IF_*``, and ``IF_NOT_*`` symbols,
+then emits ``autoconf.h`` according to ``applets_manifest.py``.
+"""
+
+from __future__ import annotations
+
 import os
 import re
+import sys
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 
-def main():
-    if len(sys.argv) < 3:
-        print("Usage: generate_autoconf.py <busybox_dir> <output_header>")
-        sys.exit(1)
+from scripts.applets_manifest import (
+    ENABLED_CONFIGS,
+    NUMERIC_CONFIG_DEFAULTS,
+    STRING_CONFIG_DEFAULTS,
+)
 
-    busybox_dir = sys.argv[1]
-    output_path = sys.argv[2]
-
-    configs = set()
-    for root, dirs, files in os.walk(busybox_dir):
-        if ".git" in root:
-            continue
-        for f in files:
-            if f.endswith((".c", ".h", ".in", ".src")):
-                path = os.path.join(root, f)
-                try:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                        content = fh.read()
-                        matches = re.findall(r"\bCONFIG_([A-Za-z0-9_]+)\b", content)
-                        configs.update(matches)
-                except Exception:
-                    pass
-
-    for root, dirs, files in os.walk(busybox_dir):
-        if ".git" in root:
-            continue
-        for f in files:
-            if f.endswith((".c", ".h")):
-                path = os.path.join(root, f)
-                try:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                        content = fh.read()
-                        for m in re.findall(r"\bENABLE_([A-Za-z0-9_]+)\b", content):
-                            configs.add(m)
-                        for m in re.findall(r"\bIF_([A-Za-z0-9_]+)\(", content):
-                            if m.startswith("NOT_"):
-                                m = m[4:]
-                            configs.add(m)
-                except Exception:
-                    pass
-
-    enabled = {
-        "HAVE_DOT_CONFIG", "HAVE_SYS_STATFS_H", "HAVE_MNTENT_H", "DESKTOP", "INCLUDE_SUSv2",
-        "LONG_OPTS", "SHOW_USAGE", "FEATURE_VERBOSE_USAGE",
-        "BUSYBOX", "NOMMU", "FEATURE_PREFER_APPLETS",
-        "ECHO", "TRUE", "FALSE", "TEST", "TEST1", "TEST2",
-        "PRINTF", "PRINTENV", "PWD", "CAT", "HEAD", "TAIL", "WC", "YES",
-        "SLEEP", "USLEEP", "BASENAME", "DIRNAME", "WHOAMI", "UNAME",
-        "WHICH", "CUT", "TR", "SEQ", "TEE", "SORT", "UNIQ", "COMM",
-        "PASTE", "FOLD", "BASE64", "MD5SUM", "SHA1SUM", "SHA256SUM", "SHA384SUM", "BASE32", "FEATURE_FANCY_HEAD",
-        "SHA512SUM", "CKSUM", "SUM", "TOUCH", "MKDIR", "RMDIR",
-        "CP", "MV", "RM", "SYNC",
-        "EXPAND", "UNEXPAND", "TSORT", "SPLIT", "SHUF",
-        "UUENCODE", "UUDECODE", "READLINK", "REALPATH",
-        "TRUNCATE", "MKTEMP", "UNLINK", "FEATURE_READLINK_FOLLOW", "FEATURE_SPLIT_FANCY",
-        "BASE32", "CAL", "CHMOD", "DATE", "DOS2UNIX", "ENV", "FACTOR",
-        "HEXDUMP", "ID", "LN", "OD", "SHA3SUM", "STRINGS",
-        "UNIX2DOS", "UPTIME", "XXD", "FEATURE_STAT_FORMAT", "FEATURE_DATE_ISOFMT",
-        "AWK", "BC", "DC", "CLEAR", "RESET", "CMP", "DIFF", "PATCH", "ED",
-        "VI", "FEATURE_VI_MAX_LEN", "FEATURE_VI_8BIT", "FEATURE_VI_COLON", "FEATURE_VI_YANKMARK", "FEATURE_VI_SEARCH", "FEATURE_VI_USE_SIGNALS", "FEATURE_VI_DOT_CMD", "FEATURE_VI_READONLY", "FEATURE_VI_SETOPTS", "FEATURE_VI_SET", "FEATURE_VI_WIN_RESIZE", "FEATURE_VI_ASK_TERMINAL", "FEATURE_VI_UNDO", "FEATURE_VI_UNDO_QUEUE", "FEATURE_VI_UNDO_QUEUE_MAX",
-        "SED", "GREP", "EGREP", "FGREP", "FIND", "XARGS", "FEATURE_GREP_CONTEXT",
-        "FEATURE_AWK_LIBM", "FEATURE_AWK_GNU_EXTENSIONS", "FEATURE_XARGS_SUPPORT_CONFIRMATION",
-        "FEATURE_XARGS_SUPPORT_QUOTES", "FEATURE_XARGS_SUPPORT_TERMOPT", "FEATURE_XARGS_SUPPORT_ZERO_TERM",
-        "GZIP", "FEATURE_GZIP_DECOMPRESS", "GUNZIP", "ZCAT",
-        "BZIP2", "BUNZIP2", "BZCAT", "UNXZ", "XZCAT",
-        "LZOP", "LZOPCAT", "UNLZOP", "FEATURE_LZOP_COMPR_HIGH",
-        "UNZIP", "FEATURE_UNZIP_BZIP2", "FEATURE_UNZIP_LZMA", "FEATURE_UNZIP_XZ",
-        "ZIP", "CPIO", "FEATURE_CPIO_O", "FEATURE_CPIO_P", "AR", "FEATURE_AR_CREATE", "FEATURE_AR_LONG_FILENAMES",
-        "KILL", "KILLALL", "TIME", "WATCH", "NC", "NC_SERVER",
-        "HTTPD", "PING", "PING6", "FTPGET", "FTPPUT", "TELNET", "TELNETD", "DNSD", "NSLOOKUP",
-        "LS", "FEATURE_LS_FILETYPES", "FEATURE_LS_FOLLOWLINKS",
-        "FEATURE_LS_RECURSIVE", "FEATURE_LS_WIDTH", "FEATURE_LS_SORTFILES",
-        "FEATURE_LS_TIMESTAMPS", "DU", "FEATURE_DU_DEFAULT_BLOCKSIZE_1K",
-        "PIDOF", "FEATURE_PIDOF_SINGLE", "FEATURE_PIDOF_OMIT",
-        "TIME", "PS", "FEATURE_PS_TIME", "FEATURE_PS_ADDITIONAL_COLUMNS", "FEATURE_PS_UNUSUAL_SYSTEMS", "FEATURE_PS_LONG", "PGREP", "PKILL", "FREE",
-        "WGET", "FEATURE_WGET_STATUSBAR", "FEATURE_WGET_AUTHENTICATION",
-        "FEATURE_WGET_TIMEOUT",
-        "CRC32", "STAT", "FEATURE_STAT_FILESYSTEM", "DF", "FREE",
-        "ASH", "HUSH", "SH", "ASH_BASH_COMPAT", "ASH_ALIAS", "ASH_OPTIMIZE_FOR_SIZE", "ASH_INTERNAL_GLOB", "ASH_EXPAND_PRMT", "HUSH_BASH_COMPAT", "HUSH_BRACE_EXPANSION", "HUSH_INTERACTIVE", "HUSH_SAVEHISTORY", "HUSH_JOB", "HUSH_TICK", "HUSH_IF", "HUSH_LOOPS", "HUSH_CASE", "HUSH_FUNCTIONS", "HUSH_LOCAL", "HUSH_RANDOM_SUPPORT", "HUSH_MODE_X", "HUSH_ECHO", "HUSH_PRINTF", "HUSH_TEST", "HUSH_HELP", "HUSH_EXPORT", "HUSH_EXPORT_N", "HUSH_READONLY", "HUSH_KILL", "HUSH_WAIT", "HUSH_TRAP", "HUSH_TYPE", "HUSH_TIMES", "HUSH_READ", "HUSH_SET", "HUSH_UNSET", "HUSH_ULIMIT", "HUSH_UMASK", "HUSH_GETOPTS", "HUSH_MEMLEAK", "FEATURE_SH_IS_ASH", "FEATURE_BASH_IS_ASH", "FEATURE_SH_STANDALONE", "FEATURE_SH_NOFORK", "FEATURE_SH_HISTFILESIZE",
-
+SKIPPED_SYMBOLS: frozenset[str] = frozenset(
+    {
+        "BUSYBOX_EXEC_PATH",
+        "LITTLE_ENDIAN",
+        "BIG_ENDIAN",
+        "VARIABLE_ARCH_PAGESIZE",
     }
+)
 
-    numeric_defaults = {
-        "FEATURE_COPYBUF_KB": "4",
-        "PASSWORD_MINLEN": "6",
-        "MD5_SMALL": "1",
-        "SHA1_SMALL": "3",
-        "SHA3_SMALL": "1",
-        "FEATURE_EDITING_MAX_LEN": "1024",
-        "FEATURE_EDITING_HISTORY": "255",
-        "SUBST_WCHAR": "65533",
-        "LAST_SUPPORTED_WCHAR": "0",
-        "BZIP2_SMALL": "8",
-        "GZIP_FAST": "0",
-        "FEATURE_VI_MAX_LEN": "4096",
-        "FEATURE_VI_UNDO_QUEUE_MAX": "256",
-        "FEATURE_KILL_DELAY": "0",
-        "LAST_ID": "60000",
-        "FIRST_SYSTEM_ID": "100",
-        "LAST_SYSTEM_ID": "999",
-        "FEATURE_BEEP_FREQ": "0",
-        "FEATURE_BEEP_LENGTH_MS": "0",
-        "FEATURE_LESS_MAXLINES": "9999999",
-        "FEATURE_HTTPD_PORT_DEFAULT": "80",
-        "FEATURE_TELNETD_PORT_DEFAULT": "23",
-        "UDHCP_DEBUG": "0",
-        "UDHCPC_SLACK_FOR_BUGGY_SERVERS": "0",
-        "FEATURE_SYSLOGD_READ_BUFFER_SIZE": "256",
-        "FEATURE_IPC_SYSLOG_BUFFER_SIZE": "16",
-    }
 
-    lines = [
+def scan_config_symbols(busybox_dir: Path) -> set[str]:
+    """Scan a BusyBox source directory in a single pass for config symbols.
+
+    Args:
+        busybox_dir: Root directory of the BusyBox source tree.
+
+    Returns:
+        Set of discovered Kconfig symbol names (without ``CONFIG_`` prefix).
+
+    Raises:
+        FileNotFoundError: If ``busybox_dir`` does not exist.
+    """
+    if not busybox_dir.is_dir():
+        raise FileNotFoundError(f"BusyBox source directory not found: {busybox_dir}")
+
+    configs: set[str] = set()
+    config_re = re.compile(r"\bCONFIG_([A-Za-z0-9_]+)\b")
+    enable_re = re.compile(r"\bENABLE_([A-Za-z0-9_]+)\b")
+    if_re = re.compile(r"\bIF_([A-Za-z0-9_]+)\(")
+
+    for root, dirs, files in os.walk(busybox_dir):
+        if ".git" in dirs:
+            dirs.remove(".git")
+        for filename in files:
+            if not filename.endswith((".c", ".h", ".in", ".src")):
+                continue
+            path = Path(root) / filename
+            content = path.read_text(encoding="utf-8", errors="ignore")
+            configs.update(config_re.findall(content))
+            if filename.endswith((".c", ".h")):
+                configs.update(enable_re.findall(content))
+                for match in if_re.findall(content):
+                    sym = match[4:] if match.startswith("NOT_") else match
+                    configs.add(sym)
+
+    return configs
+
+
+def render_autoconf_header(
+    discovered_symbols: set[str],
+    enabled_configs: frozenset[str] = ENABLED_CONFIGS,
+    numeric_defaults: Mapping[str, int] = NUMERIC_CONFIG_DEFAULTS,
+    string_defaults: Mapping[str, str] = STRING_CONFIG_DEFAULTS,
+) -> str:
+    """Render the complete C preprocessor content for ``autoconf.h``.
+
+    Args:
+        discovered_symbols: Set of symbol names found in the BusyBox tree.
+        enabled_configs: Set of boolean symbols enabled for the build.
+        numeric_defaults: Mapping of numeric symbol names to integer values.
+        string_defaults: Mapping of string symbol names to string values.
+
+    Returns:
+        Complete C header text for ``autoconf.h``.
+    """
+    all_symbols = (
+        discovered_symbols
+        | set(enabled_configs)
+        | set(numeric_defaults.keys())
+        | set(string_defaults.keys())
+    )
+    lines: list[str] = [
         "/* Generated by generate_autoconf.py for busybox-windows */",
         "#ifndef AUTOCONF_H",
         "#define AUTOCONF_H 1",
@@ -132,23 +109,44 @@ def main():
         "#define st_mtim st_mtimespec",
         "#define st_ctim st_ctimespec",
         "#endif",
-        "#ifndef f_namelen",
-        "#define f_namelen f_flags",
         "#endif",
+        "",
+        "/* Platform MMU / NOMMU selection: Windows uses spawn/NOMMU, POSIX uses MMU */",
+        "#if defined(_WIN32) || defined(_MSC_VER)",
+        "#define CONFIG_NOMMU 1",
+        "#define ENABLE_NOMMU 1",
+        "#define IF_NOMMU(...) __VA_ARGS__",
+        "#define IF_NOT_NOMMU(...)",
+        "#else",
+        "#define CONFIG_NOMMU 0",
+        "#define ENABLE_NOMMU 0",
+        "#define IF_NOMMU(...)",
+        "#define IF_NOT_NOMMU(...) __VA_ARGS__",
         "#endif",
-        ""
+        "",
     ]
 
-    for sym in sorted(configs):
-        if sym in ("BUSYBOX_EXEC_PATH", "LITTLE_ENDIAN", "BIG_ENDIAN", "VARIABLE_ARCH_PAGESIZE"):
+    for sym in sorted(all_symbols):
+        if sym in SKIPPED_SYMBOLS or sym == "NOMMU":
             continue
-        if sym in numeric_defaults:
-            val = numeric_defaults[sym]
-            lines.append(f"#define CONFIG_{sym} {val}")
+        if sym in string_defaults:
+            str_val = string_defaults[sym]
+            lines.append(f'#define CONFIG_{sym} "{str_val}"')
             lines.append(f"#define ENABLE_{sym} 1")
             lines.append(f"#define IF_{sym}(...) __VA_ARGS__")
             lines.append(f"#define IF_NOT_{sym}(...)")
-        elif sym in enabled:
+        elif sym in numeric_defaults:
+            val = numeric_defaults[sym]
+            lines.append(f"#define CONFIG_{sym} {val}")
+            if val != 0:
+                lines.append(f"#define ENABLE_{sym} 1")
+                lines.append(f"#define IF_{sym}(...) __VA_ARGS__")
+                lines.append(f"#define IF_NOT_{sym}(...)")
+            else:
+                lines.append(f"#define ENABLE_{sym} 0")
+                lines.append(f"#define IF_{sym}(...)")
+                lines.append(f"#define IF_NOT_{sym}(...) __VA_ARGS__")
+        elif sym in enabled_configs:
             lines.append(f"#define CONFIG_{sym} 1")
             lines.append(f"#define ENABLE_{sym} 1")
             lines.append(f"#define IF_{sym}(...) __VA_ARGS__")
@@ -160,12 +158,54 @@ def main():
             lines.append(f"#define IF_NOT_{sym}(...) __VA_ARGS__")
         lines.append("")
 
-    lines.append("#endif /* AUTOCONF_H */\n")
+    lines.append("#endif /* AUTOCONF_H */")
+    lines.append("")
+    return chr(10).join(lines)
 
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    with open(output_path, "w", encoding="utf-8") as out:
-        out.write("\n".join(lines))
-    print(f"Generated {output_path} with {len(configs)} configuration symbols.")
+
+def generate_autoconf(busybox_dir: Path, output_path: Path) -> int:
+    """Scan ``busybox_dir`` and write ``autoconf.h`` to ``output_path``.
+
+    Args:
+        busybox_dir: Root directory of the BusyBox source tree.
+        output_path: Destination file path for ``autoconf.h``.
+
+    Returns:
+        Number of discovered configuration symbols.
+    """
+    configs = scan_config_symbols(busybox_dir)
+    header_text = render_autoconf_header(configs)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not output_path.exists() or output_path.read_text(encoding="utf-8") != header_text:
+        output_path.write_text(header_text, encoding="utf-8")
+    return len(configs)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point for ``generate_autoconf.py``.
+
+    Args:
+        argv: Optional sequence of CLI arguments (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        Exit status code (``0`` on success, ``1`` on invalid arguments or error).
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 2:
+        print("Usage: generate_autoconf.py <busybox_dir> <output_header>")
+        return 1
+
+    busybox_dir = Path(args[0])
+    output_path = Path(args[1])
+    try:
+        count = generate_autoconf(busybox_dir, output_path)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Generated {output_path} with {count} configuration symbols.")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

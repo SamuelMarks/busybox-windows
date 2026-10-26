@@ -1,4 +1,4 @@
-BusyBox Windows Native (MSVC) builds
+BusyBox Windows Native (MSVC) Builds
 ====================================
 
 [![License](https://img.shields.io/badge/license-CC0%20OR%20Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -12,24 +12,26 @@ This project's mission is to provide true native Windows binaries (`busybox.exe`
 
 ---
 
-## The Magic: `auto-win-msvc`
+## Architecture: `auto-win-msvc` + Declarative Patches
 
-All POSIX system calls, process spawning, file descriptors, terminal handling, and signals are backed directly by the modular **[auto-win-msvc](https://github.com/SamuelMarks/auto-win-msvc)** compatibility layer.
+All POSIX system calls, process spawning, file descriptors, terminal handling, `/proc` enumeration, and signals are backed directly by the modular **[auto-win-msvc](https://github.com/SamuelMarks/auto-win-msvc)** compatibility layer.
 
-By decoupling the Windows compatibility layer from the BusyBox implementation itself, we ensure:
-- **Pristine Upstream Integrity:** Strict zero-modification policy for upstream code. No `.h` or `.c` files in `busybox` are modified. All compatibility is achieved through CMake configuration, forced includes, and modular polyfills.
+By separating POSIX/Linux platform polyfills from the BusyBox build harness:
+- **Zero `.c`/`.h` Files in `busybox-windows`:** No `.h` or `.c` files are stored in `busybox-windows`. All general POSIX/Linux/BSD polyfills live in `auto-win-msvc`, and strictly BusyBox-internal MSVC adaptations live as declarative, DEP-3 documented unified diffs in `patches/` applied idempotently via `scripts/apply_patches.py`.
+- **Single-Source-of-Truth Applet Manifest:** `scripts/applets_manifest.py` declaratively defines all 135 enabled applets, their dispatch macros, Kconfig symbols, and required source files, driving both `scripts/generate_autoconf.py` and `scripts/generate_applet_tables.py` at build time.
 - **High Performance:** Lightweight, native Windows execution with fast startup and low overhead.
-- **Zero Namespace Pollution:** Clean separation without `<windows.h>` macro clashes (`near`, `far`, `min`, `max`, `ERROR`, etc.) or binary bloat.
+- **100% Tested & Strongly Typed:** 100% Python line, branch, function, and docstring coverage (`pytest --cov --cov-branch --cov-fail-under=100`, `mypy --strict`, `interrogate --fail-under=100`) alongside functional CTest verification suites (`scripts/run_applet_test.py`) covering coreutils, archival, editors, findutils, procps, shells (`ash`, `hush`, `sh`), and loopback networking (`httpd`, `wget`, `nc`, `dnsd`, `nslookup`, `ftpget`, `ftpput`, `telnet`, `ping`).
 
 ---
 
-## Key Features
+## Enabled Applets (135 Total)
 
-- **Pure CMake Build Harness:** Standalone CMake configuration supporting MSVC 2005, 2019, 2022, 2026, MinGW, Clang, and GCC across Windows, macOS, and Linux.
-- **Header Generation via `configure_file`:** Generation of configuration headers (`autoconf.h`, `bbconfigopts.h`, `applet_tables.h`, `NUM_APPLETS.h`, `common_bufsiz.h`, `usage.h`) into `CMAKE_BINARY_DIR`.
-- **Progressive Applet Enablement:** Hundreds of applets tiered from pure computation and text filtering to advanced filesystem, editor, shell, and network applets.
-- **Multiple Packaging Formats:** Generates NSIS executable installers and standalone portable ZIP archives via CPack.
-- **Automated CI/CD:** Continuous synchronization and release generation via GitHub Actions.
+- **Coreutils & Text:** `[`, `[[`, `base32`, `base64`, `basename`, `cat`, `chmod`, `cksum`, `comm`, `cp`, `crc32`, `cut`, `date`, `df`, `dirname`, `dos2unix`, `du`, `echo`, `env`, `expand`, `factor`, `false`, `fold`, `head`, `id`, `ln`, `ls`, `md5sum`, `mkdir`, `mktemp`, `mv`, `nl`, `od`, `paste`, `printenv`, `printf`, `pwd`, `readlink`, `realpath`, `rm`, `rmdir`, `seq`, `sha1sum`, `sha256sum`, `sha384sum`, `sha3sum`, `sha512sum`, `shuf`, `sleep`, `sort`, `split`, `stat`, `sum`, `sync`, `tail`, `tee`, `test`, `touch`, `tr`, `true`, `truncate`, `tsort`, `uname`, `unexpand`, `uniq`, `unix2dos`, `unlink`, `usleep`, `uudecode`, `uuencode`, `wc`, `whoami`, `yes`
+- **Archival & Compression:** `ar`, `bunzip2`, `bzcat`, `bzip2`, `cpio`, `gunzip`, `gzip`, `lzop`, `lzopcat`, `tar`, `unlzop`, `unxz`, `unzip`, `xz`, `xzcat`, `zcat`
+- **Editors & Search:** `awk`, `cmp`, `diff`, `ed`, `egrep`, `fgrep`, `find`, `grep`, `patch`, `sed`, `vi`, `xargs`
+- **Shells:** `ash`, `hush`, `sh`
+- **Process & System Utilities:** `cal`, `clear`, `free`, `hexdump`, `hexedit`, `kill`, `killall`, `pgrep`, `pidof`, `pkill`, `ps`, `reset`, `strings`, `time`, `uptime`, `watch`, `which`, `xxd`, `bc`, `dc`
+- **Networking:** `dnsd`, `ftpget`, `ftpput`, `httpd`, `nc`, `nslookup`, `ping`, `ping6`, `telnet`, `telnetd`, `wget`
 
 ---
 
@@ -65,12 +67,13 @@ To build BusyBox for Windows from source using Visual Studio / MSVC:
    cmake --build build --config Release
    ```
 
-4. Run tests:
+4. Run functional CTest and Python test suites:
    ```cmd
    ctest --test-dir build -C Release --output-on-failure
+   pytest
    ```
 
-5. Package installers:
+5. Package installers (or run `release.bat` to automate steps 1–5):
    ```cmd
    cd build
    cpack -C Release -G ZIP
@@ -79,19 +82,13 @@ To build BusyBox for Windows from source using Visual Studio / MSVC:
 
 ---
 
-## Running with MSVC under Wine (macOS / Linux)
+## Quality & Coverage Gates
 
-A helper script `build_msvc_wine.sh` is provided to cross-compile and test with MSVC under Wine:
+All Python build, codegen, patch-management, and test-orchestration modules enforce 100% docstring, type, line, branch, and function coverage via `pre-commit`:
 
 ```bash
-./build_msvc_wine.sh
+pre-commit run --all-files
 ```
-
----
-
-## Roadmap and Status
-
-See [BUSYBOX_TODO_PLAN.md](BUSYBOX_TODO_PLAN.md) for the complete roadmap, tiered applet enablement checklist, MSVC compatibility shims, and testing milestones.
 
 ---
 

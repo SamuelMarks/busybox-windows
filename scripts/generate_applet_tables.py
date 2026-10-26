@@ -1,235 +1,289 @@
 #!/usr/bin/env python3
+"""BusyBox applet dispatch table and header generator.
+
+Generates the build-time BusyBox include files required by ``libbb/appletlib.c``
+and applet compilation units from ``applets_manifest.py``:
+- ``NUM_APPLETS.h``
+- ``applets.h``
+- ``applet_tables.h``
+- ``usage_compressed.h``
+- ``common_bufsiz.h``
+- ``bbconfigopts.h``
+"""
+
+from __future__ import annotations
+
+import re
 import sys
-import os
+from collections.abc import Sequence
+from pathlib import Path
 
-APPLETS = [
-    ("ash", "ash", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("hush", "hush", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("sh", "ash", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
+from scripts.applets_manifest import AppletSpec, get_sorted_applets
 
-    ("awk", "awk", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("base32", "baseNUM", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("base64", "baseNUM", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("basename", "basename", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("bc", "bc", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("bunzip2", "bunzip2", "BB_DIR_USR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("bzcat", "bunzip2", "BB_DIR_USR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("bzip2", "bzip2", "BB_DIR_USR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("cal", "cal", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("cat", "cat", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("chmod", "chmod", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("cksum", "cksum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("clear", "clear", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("cmp", "cmp", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("comm", "comm", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("cp", "cp", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("crc32", "cksum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("cut", "cut", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("date", "date", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("dc", "dc", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("df", "df", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("diff", "diff", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("dirname", "dirname", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("dos2unix", "dos2unix", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("du", "du", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("echo", "echo", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("ed", "ed", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("egrep", "grep", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("env", "env", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("expand", "expand", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("factor", "factor", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("false", "false", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("fgrep", "grep", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("find", "find", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("fold", "fold", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("free", "free", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("grep", "grep", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("gunzip", "gunzip", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("gzip", "gzip", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("head", "head", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("hexdump", "hexdump", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("id", "id", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("kill", "kill", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("killall", "kill", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("ln", "ln", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("ls", "ls", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("md5sum", "md5_sha1_sum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("mkdir", "mkdir", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("mktemp", "mktemp", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("mv", "mv", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("nc", "nc", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("od", "od", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("paste", "paste", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("patch", "patch", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("pidof", "pidof", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("printenv", "printenv", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("printf", "printf", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("pwd", "pwd", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("readlink", "readlink", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("realpath", "realpath", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("reset", "reset", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("rm", "rm", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("rmdir", "rmdir", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("sed", "sed", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("seq", "seq", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("sha1sum", "md5_sha1_sum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("sha256sum", "md5_sha1_sum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("sha3sum", "md5_sha1_sum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("sha512sum", "md5_sha1_sum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("shuf", "shuf", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("sleep", "sleep", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("sort", "sort", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("split", "split", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("stat", "stat", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("strings", "strings", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("sum", "sum", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("sync", "sync", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("tail", "tail", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("tee", "tee", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("test", "test", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("time", "time", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("touch", "touch", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("tr", "tr", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("true", "true", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("truncate", "truncate", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("tsort", "tsort", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("uname", "uname", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("unexpand", "expand", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("uniq", "uniq", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("unix2dos", "dos2unix", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("unlink", "unlink", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("unxz", "unxz", "BB_DIR_USR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("uptime", "uptime", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("usleep", "usleep", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("uudecode", "uudecode", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("uuencode", "uuencode", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("watch", "watch", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("wc", "wc", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("wget", "wget", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("which", "which", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET"),
-    ("whoami", "whoami", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("xargs", "xargs", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("xxd", "xxd", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOEXEC"),
-    ("xzcat", "unxz", "BB_DIR_USR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-    ("yes", "yes", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_NOFORK"),
-    ("zcat", "gunzip", "BB_DIR_BIN", "BB_SUID_DROP", "APPLET_ODDNAME"),
-]
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: generate_applet_tables.py <output_inc_dir>")
-        sys.exit(1)
+def sanitize_applet_identifier(name: str) -> str:
+    """Convert an applet name into a valid C identifier suffix for ``APPLET_NO_``.
 
-    out_dir = sys.argv[1]
-    os.makedirs(out_dir, exist_ok=True)
+    Args:
+        name: Raw applet name (such as ``"["``, ``"[["``, or ``"ash"``).
 
-    applets = sorted(APPLETS, key=lambda a: a[0])
+    Returns:
+        Sanitized identifier string suitable for ``#define APPLET_NO_<id>``
+        or empty string if ``name`` contains non-identifier characters.
+    """
+    if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+        return name
+    return ""
+
+
+def compute_applet_flag_bytes(applets: Sequence[AppletSpec]) -> list[str]:
+    """Pack ``nofork`` and ``noexec`` flags for 4 applets per byte.
+
+    Args:
+        applets: Ordered sequence of ``AppletSpec`` definitions.
+
+    Returns:
+        List of hexadecimal byte literals (e.g. ``["0x01", ...]``).
+    """
+    flags: list[tuple[int, int]] = []
+    for spec in applets:
+        noexec = 1 if spec.macro == "APPLET_NOEXEC" else 0
+        nofork = 1 if spec.macro == "APPLET_NOFORK" else 0
+        flags.append((nofork, noexec))
+
     num_applets = len(applets)
+    byte_vals: list[str] = []
+    idx = 0
+    while idx < num_applets:
+        val = flags[idx][0] + (flags[idx][1] << 1)
+        if idx + 1 < num_applets:
+            val |= (flags[idx + 1][0] + (flags[idx + 1][1] << 1)) << 2
+        if idx + 2 < num_applets:
+            val |= (flags[idx + 2][0] + (flags[idx + 2][1] << 1)) << 4
+        if idx + 3 < num_applets:
+            val |= (flags[idx + 3][0] + (flags[idx + 3][1] << 1)) << 6
+        byte_vals.append(f"0x{val:02x}")
+        idx += 4
+    return byte_vals
+
+
+def _write_if_changed(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` only if the file does not exist or differs.
+
+    Args:
+        path: Target file path.
+        content: Text content to write with UTF-8 encoding.
+    """
+    if not path.exists() or path.read_text(encoding="utf-8") != content:
+        path.write_text(content, encoding="utf-8")
+
+
+def generate_headers(out_dir: Path, applets: Sequence[AppletSpec] | None = None) -> int:
+    """Generate all BusyBox applet and build-time headers into ``out_dir``.
+
+    Args:
+        out_dir: Destination directory for generated header files.
+        applets: Optional custom sequence of ``AppletSpec`` entries (defaults to
+            ``get_sorted_applets()``).
+
+    Returns:
+        Total number of applets written into the generated tables.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    sorted_applets = (
+        sorted(applets, key=lambda spec: spec.name) if applets is not None else get_sorted_applets()
+    )
+    num_applets = len(sorted_applets)
+    nl = chr(10)
+    bs = chr(92)
+    nul = bs + "0"
 
     # 1. NUM_APPLETS.h
-    with open(os.path.join(out_dir, "NUM_APPLETS.h"), "w", encoding="utf-8") as f:
-        f.write(f"#define NUM_APPLETS {num_applets}\n")
+    _write_if_changed(
+        out_dir / "NUM_APPLETS.h",
+        f"#define NUM_APPLETS {num_applets}{nl}",
+    )
 
     # 2. applets.h
-    with open(os.path.join(out_dir, "applets.h"), "w", encoding="utf-8") as f:
-        f.write("""/* Generated by generate_applet_tables.py */
-#ifndef BUSYBOX_APPLETS_H
-#define BUSYBOX_APPLETS_H 1
+    applets_h_lines = [
+        "/* Generated by generate_applet_tables.py */",
+        "#ifndef BUSYBOX_APPLETS_H",
+        "#define BUSYBOX_APPLETS_H 1",
+        "",
+        "#if defined(PROTOTYPES)",
+        "# define APPLET(name,l,s) int name##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;",
+        (
+            "# define APPLET_ODDNAME(name,main,l,s) "
+            "int main##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;"
+        ),
+        (
+            "# define APPLET_NOEXEC(name,main,l,s) "
+            "int main##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;"
+        ),
+        (
+            "# define APPLET_NOFORK(name,main,l,s) "
+            "int main##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;"
+        ),
+        "#elif defined(NAME_MAIN)",
+        "# define APPLET(name,l,s) name name##_main",
+        "# define APPLET_ODDNAME(name,main,l,s) name main##_main",
+        "# define APPLET_NOEXEC(name,main,l,s) name main##_main",
+        "# define APPLET_NOFORK(name,main,l,s) name main##_main",
+        "#elif defined(MAKE_USAGE)",
+        f'# define APPLET(name,l,s) name##_trivial_usage "{nul}" name##_full_usage "{nul}"',
+        (
+            f'# define APPLET_ODDNAME(name,main,l,s) name##_trivial_usage "{nul}" '
+            f'name##_full_usage "{nul}"'
+        ),
+        (
+            f'# define APPLET_NOEXEC(name,main,l,s) name##_trivial_usage "{nul}" '
+            f'name##_full_usage "{nul}"'
+        ),
+        (
+            f'# define APPLET_NOFORK(name,main,l,s) name##_trivial_usage "{nul}" '
+            f'name##_full_usage "{nul}"'
+        ),
+        "#elif defined(MAKE_LINKS)",
+        "# define APPLET(name,l,s) LINK l name",
+        "# define APPLET_ODDNAME(name,main,l,s) LINK l name",
+        "# define APPLET_NOEXEC(name,main,l,s) LINK l name",
+        "# define APPLET_NOFORK(name,main,l,s) LINK l name",
+        "#else",
+        "  const struct bb_applet applets[] = {",
+        "# define APPLET(name,l,s) { #name, #name, l, s, 0, 0 },",
+        "# define APPLET_ODDNAME(name,main,l,s) { #name, #main, l, s, 0, 0 },",
+        "# define APPLET_NOEXEC(name,main,l,s) { #name, #main, l, s, 1, 0 },",
+        "# define APPLET_NOFORK(name,main,l,s) { #name, #main, l, s, 0, 1 },",
+        "#endif",
+        "",
+    ]
 
-#if defined(PROTOTYPES)
-# define APPLET(name,l,s) int name##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-# define APPLET_ODDNAME(name,main,l,s) int main##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-# define APPLET_NOEXEC(name,main,l,s) int main##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-# define APPLET_NOFORK(name,main,l,s) int main##_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
-#elif defined(NAME_MAIN)
-# define APPLET(name,l,s) name name##_main
-# define APPLET_ODDNAME(name,main,l,s) name main##_main
-# define APPLET_NOEXEC(name,main,l,s) name main##_main
-# define APPLET_NOFORK(name,main,l,s) name main##_main
-#elif defined(MAKE_USAGE)
-# define APPLET(name,l,s) name##_trivial_usage "\\0" name##_full_usage "\\0"
-# define APPLET_ODDNAME(name,main,l,s) name##_trivial_usage "\\0" name##_full_usage "\\0"
-# define APPLET_NOEXEC(name,main,l,s) name##_trivial_usage "\\0" name##_full_usage "\\0"
-# define APPLET_NOFORK(name,main,l,s) name##_trivial_usage "\\0" name##_full_usage "\\0"
-#elif defined(MAKE_LINKS)
-# define APPLET(name,l,s) LINK l name
-# define APPLET_ODDNAME(name,main,l,s) LINK l name
-# define APPLET_NOEXEC(name,main,l,s) LINK l name
-# define APPLET_NOFORK(name,main,l,s) LINK l name
-#else
-  const struct bb_applet applets[] = {
-# define APPLET(name,l,s) { #name, #name, l, s, 0, 0 },
-# define APPLET_ODDNAME(name,main,l,s) { #name, #main, l, s, 0, 0 },
-# define APPLET_NOEXEC(name,main,l,s) { #name, #main, l, s, 1, 0 },
-# define APPLET_NOFORK(name,main,l,s) { #name, #main, l, s, 0, 1 },
-#endif
+    for spec in sorted_applets:
+        cfg = spec.config_symbol
+        applets_h_lines.append(f"#if ENABLE_{cfg}")
+        if spec.macro in ("APPLET_ODDNAME", "APPLET_NOEXEC", "APPLET_NOFORK"):
+            applets_h_lines.append(
+                f"IF_{cfg}({spec.macro}({spec.name}, {spec.main_fn}, "
+                f"{spec.dir_enum}, {spec.suid_enum}))"
+            )
+        else:
+            applets_h_lines.append(
+                f"IF_{cfg}({spec.macro}({spec.name}, {spec.dir_enum}, {spec.suid_enum}))"
+            )
+        applets_h_lines.append("#endif")
 
-""")
-        for name, main_fn, loc, suid, macro in applets:
-            cfg = name.upper()
-            f.write(f"#if ENABLE_{cfg}\n")
-            if macro in ("APPLET_ODDNAME", "APPLET_NOEXEC", "APPLET_NOFORK"):
-                f.write(f"IF_{cfg}({macro}({name}, {main_fn}, {loc}, {suid}))\n")
-            else:
-                f.write(f"IF_{cfg}({macro}({name}, {loc}, {suid}))\n")
-            f.write(f"#endif\n")
-        f.write("""
-#if !defined(PROTOTYPES) && !defined(NAME_MAIN) && !defined(MAKE_USAGE) && !defined(MAKE_LINKS)
-};
-#endif
-
-#endif /* BUSYBOX_APPLETS_H */
-""")
+    applets_h_lines.extend(
+        [
+            "",
+            (
+                "#if !defined(PROTOTYPES) && !defined(NAME_MAIN) "
+                "&& !defined(MAKE_USAGE) && !defined(MAKE_LINKS)"
+            ),
+            "};",
+            "#endif",
+            "",
+            "#endif /* BUSYBOX_APPLETS_H */",
+            "",
+        ]
+    )
+    _write_if_changed(out_dir / "applets.h", nl.join(applets_h_lines))
 
     # 3. applet_tables.h
-    with open(os.path.join(out_dir, "applet_tables.h"), "w", encoding="utf-8") as f:
-        f.write("""/* Generated by generate_applet_tables.py */
-#ifndef APPLET_TABLES_H
-#define APPLET_TABLES_H 1
+    tables_lines = [
+        "/* Generated by generate_applet_tables.py */",
+        "#ifndef APPLET_TABLES_H",
+        "#define APPLET_TABLES_H 1",
+        "",
+        '#include "NUM_APPLETS.h"',
+        "",
+        'const char applet_names[] ALIGN1 = ""',
+    ]
+    for spec in sorted_applets:
+        tables_lines.append(f'"{spec.name}{nul}"')
+    tables_lines.append(";")
+    tables_lines.append("")
 
-#include "NUM_APPLETS.h"
+    for idx, spec in enumerate(sorted_applets):
+        ident = sanitize_applet_identifier(spec.name)
+        if ident:
+            tables_lines.append(f"#define APPLET_NO_{ident} {idx}")
+    tables_lines.append("")
 
-const char applet_names[] ALIGN1 = ""
-""")
-        for name, _, _, _, _ in applets:
-            f.write(f'"{name}\\0"\n')
-        f.write(";\n\n")
+    tables_lines.append("#ifndef SKIP_applet_main")
+    tables_lines.append("int (*const applet_main[])(int argc, char **argv) = {")
+    for spec in sorted_applets:
+        tables_lines.append(f"{spec.main_fn}_main,")
+    tables_lines.append("};")
+    tables_lines.append("#endif")
+    tables_lines.append("")
 
-        for i, (name, _, _, _, _) in enumerate(applets):
-            f.write(f"#define APPLET_NO_{name} {i}\n")
-        f.write("\n")
+    tables_lines.append("const uint8_t applet_flags[] ALIGN1 = {")
+    byte_vals = compute_applet_flag_bytes(sorted_applets)
+    tables_lines.append(", ".join(byte_vals))
+    tables_lines.append("};")
+    tables_lines.append("")
+    tables_lines.append("#endif /* APPLET_TABLES_H */")
+    tables_lines.append("")
+    _write_if_changed(out_dir / "applet_tables.h", nl.join(tables_lines))
 
-        f.write("#ifndef SKIP_applet_main\n")
-        f.write("int (*const applet_main[])(int argc, char **argv) = {\n")
-        for _, main_fn, _, _, _ in applets:
-            f.write(f"{main_fn}_main,\n")
-        f.write("};\n")
-        f.write("#endif\n\n")
+    # 4. usage_compressed.h
+    usage_lines = [
+        "/* Generated by generate_applet_tables.py */",
+        f'#define UNPACKED_USAGE "" {bs}',
+    ]
+    for idx, spec in enumerate(sorted_applets):
+        suffix = f" {bs}" if idx + 1 < num_applets else ""
+        escaped_usage = spec.usage.replace(bs, bs + bs).replace('"', bs + '"')
+        usage_lines.append(f'  "{escaped_usage}{nul}"{suffix}')
+    usage_lines.append("")
+    _write_if_changed(out_dir / "usage_compressed.h", nl.join(usage_lines))
 
-        # applet_flags calculation
-        f.write("const uint8_t applet_flags[] ALIGN1 = {\n")
-        flags = []
-        for _, _, _, _, macro in applets:
-            noexec = 1 if macro == "APPLET_NOEXEC" else 0
-            nofork = 1 if macro == "APPLET_NOFORK" else 0
-            flags.append((nofork, noexec))
+    # 5. common_bufsiz.h
+    common_bufsiz_lines = [
+        "/* Generated by generate_applet_tables.py */",
+        "#ifndef COMMON_BUFSIZ_H",
+        "#define COMMON_BUFSIZ_H 1",
+        "#define COMMON_BUFSIZE 4096",
+        "extern char bb_common_bufsiz1[];",
+        "#define setup_common_bufsiz() ((void)0)",
+        "#endif /* COMMON_BUFSIZ_H */",
+        "",
+    ]
+    _write_if_changed(out_dir / "common_bufsiz.h", nl.join(common_bufsiz_lines))
 
-        i = 0
-        byte_vals = []
-        while i < num_applets:
-            v = flags[i][0] + (flags[i][1] << 1)
-            if i + 1 < num_applets:
-                v |= (flags[i+1][0] + (flags[i+1][1] << 1)) << 2
-            if i + 2 < num_applets:
-                v |= (flags[i+2][0] + (flags[i+2][1] << 1)) << 4
-            if i + 3 < num_applets:
-                v |= (flags[i+3][0] + (flags[i+3][1] << 1)) << 6
-            byte_vals.append(f"0x{v:02x}")
-            i += 4
-        f.write(", ".join(byte_vals) + "\n};\n\n")
-        f.write("#endif /* APPLET_TABLES_H */\n")
+    # 6. bbconfigopts.h
+    bbconfigopts_lines = [
+        "/* Generated by generate_applet_tables.py */",
+        "#ifndef BBCONFIGOPTS_H",
+        "#define BBCONFIGOPTS_H 1",
+        f'static const char bbconfig_config[] ALIGN1 = "CONFIG_HAVE_DOT_CONFIG=y{bs}n";',
+        "#endif /* BBCONFIGOPTS_H */",
+        "",
+    ]
+    _write_if_changed(out_dir / "bbconfigopts.h", nl.join(bbconfigopts_lines))
 
+    return num_applets
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI entry point for generating BusyBox applet tables and auxiliary headers.
+
+    Args:
+        argv: Optional sequence of CLI arguments (defaults to ``sys.argv[1:]``).
+
+    Returns:
+        Exit status code (``0`` on success, ``1`` on invalid arguments).
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 1:
+        print("Usage: generate_applet_tables.py <output_inc_dir>")
+        return 1
+
+    out_dir = Path(args[0])
+    num_applets = generate_headers(out_dir)
     print(f"Generated applets headers for {num_applets} applets in {out_dir}")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -8,10 +8,20 @@ _CPack_Packages/
 *.msi
 *.zip
 
+# Forbidden C Sources and Headers in busybox-windows
+# (All C polyfills belong in ../auto-win-msvc; BusyBox changes belong in patches/)
+*.c
+*.h
+*.h.in
+include/
+
 # Test Outputs
 test_output.txt
 malloc_log.txt
 .coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Python
 __pycache__/

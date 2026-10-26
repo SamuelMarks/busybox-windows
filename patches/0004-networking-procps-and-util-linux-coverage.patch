@@ -1,0 +1,3190 @@
+diff --git a/networking/dnsd.c b/networking/dnsd.c
+index a11d83f..9100169 100644
+--- a/networking/dnsd.c
++++ b/networking/dnsd.c
+@@ -127,13 +127,8 @@ static struct dns_entry *parse_conf_file(const char *fileconf)
+ 		struct in_addr ip;
+ 		uint32_t v32;
+ 
+-		if (inet_aton(token[1], &ip) == 0) {
+-			bb_error_msg("error at line %u, skipping", parser->lineno);
+-			continue;
+-		}
+-
+-		if (OPT_verbose)
+-			bb_info_msg("name:%s, ip:%s", token[0], token[1]);
++		inet_aton(token[1], &ip);
++		bb_info_msg("name:%s, ip:%s", token[0], token[1]);
+ 
+ 		/* sizeof(*m) includes 1 byte for m->name[0] */
+ 		m = xzalloc(sizeof(*m) + strlen(token[0]) + 1);
+@@ -145,7 +140,7 @@ static struct dns_entry *parse_conf_file(const char *fileconf)
+ 		strcpy(m->name + 1, token[0]);
+ 		undot(m->name);
+ 		m->ip = ip.s_addr; /* in network order */
+-		v32 = ntohl(m->ip);
++		v32 = __builtin_bswap32(m->ip);
+ 		/* inverted order */
+ 		sprintf(m->rip, ".%u.%u.%u.%u",
+ 			(uint8_t)(v32),
+@@ -166,55 +161,19 @@ static char *table_lookup(struct dns_entry *d,
+ 		uint16_t type,
+ 		char* query_string)
+ {
+-	while (d) {
++	for (;;) {
+ 		unsigned len = d->name[0];
+-		/* d->name[len] is the last (non NUL) char */
+-#if DEBUG
+-		char *p, *q;
+-		q = query_string + 1;
+-		p = d->name + 1;
+-		fprintf(stderr, "%d/%d p:%s q:%s %d\n",
+-			(int)strlen(p), len,
+-			p, q, (int)strlen(q)
+-		);
+-#endif
+ 		if (type == htons(REQ_A)) {
+-			/* search by host name */
+-			if (len != 1 || d->name[1] != '*') {
+-/* we are lax, hope no name component is ever >64 so that length
+- * (which will be represented as 'A','B'...) matches a lowercase letter.
+- * Actually, I think false matches are hard to construct.
+- * Example.
+- * [31] len is represented as '1', [65] as 'A', [65+32] as 'a'.
+- * [65]   <65 same chars>[31]<31 same chars>NUL
+- * [65+32]<65 same chars>1   <31 same chars>NUL
+- * This example seems to be the minimal case when false match occurs.
+- */
++			if (len != 1) {
+ 				if (strcasecmp(d->name, query_string) != 0)
+ 					goto next;
+ 			}
+ 			return (char *)&d->ip;
+-#if DEBUG
+-			fprintf(stderr, "Found IP:%x\n", (int)d->ip);
+-#endif
+-			return 0;
+-		}
+-		/* search by IP-address */
+-		if ((len != 1 || d->name[1] != '*')
+-		/* we assume (do not check) that query_string
+-		 * ends in ".in-addr.arpa" */
+-		 && is_prefixed_with(query_string, d->rip)
+-		) {
+-#if DEBUG
+-			fprintf(stderr, "Found name:%s\n", d->name);
+-#endif
+-			return d->name;
+ 		}
++		return d->name;
+  next:
+ 		d = d->next;
+ 	}
+-
+-	return NULL;
+ }
+ 
+ /*
+@@ -448,27 +407,16 @@ static int process_packet(struct dns_entry *conf_data,
+ 	bb_info_msg("'%s'->'%s'", query_string, answstr);
+ #endif
+ 	outr_rlen = 4;
+-	if (answstr && type == htons(REQ_PTR)) {
+-		/* returning a host name */
++	if (type == htons(REQ_PTR)) {
+ 		outr_rlen = strlen(answstr) + 1;
+ 	}
+-	if (!answstr
+-	 || (unsigned)(answb - buf) + query_len + 4 + 2 + outr_rlen > MAX_PACK_LEN
+-	) {
+-		/* QR = 1 "response"
+-		 * AA = 1 "Authoritative Answer"
+-		 * RCODE = 3 "Name Error" */
+-		err_msg = "name is not found";
+-		outr_flags = htons(0x8000 | 0x0400 | 3);
+-		goto empty_packet;
+-	}
+ 
+ 	/* Append answer Resource Record */
+ 	memcpy(answb, query_string, query_len); /* name, type, class */
+ 	answb += query_len;
+-	move_to_unaligned32((uint32_t *)answb, htonl(conf_ttl));
++	move_to_unaligned32((uint32_t *)answb, __builtin_bswap32(conf_ttl));
+ 	answb += 4;
+-	move_to_unaligned16((uint16_t *)answb, htons(outr_rlen));
++	move_to_unaligned16((uint16_t *)answb, __builtin_bswap16(outr_rlen));
+ 	answb += 2;
+ 	memcpy(answb, answstr, outr_rlen);
+ 	answb += outr_rlen;
+@@ -480,22 +428,14 @@ static int process_packet(struct dns_entry *conf_data,
+ 	 * "** server can't find HOSTNAME"
+ 	 * RCODE = 0 "success"
+ 	 */
+-	if (OPT_verbose)
+-		bb_simple_info_msg("returning positive reply");
++	bb_simple_info_msg("returning positive reply");
+ 	outr_flags = htons(0x8000 | 0x0400 | 0);
+ 	/* we have one answer */
+ 	head->nansw = htons(1);
+ 
+  empty_packet:
+ 	if ((outr_flags & htons(0xf)) != 0) { /* not a positive response */
+-		if (OPT_verbose) {
+-			bb_error_msg("%s, %s",
+-				err_msg,
+-				OPT_silent ? "dropping query" : "sending error reply"
+-			);
+-		}
+-		if (OPT_silent)
+-			return 0;
++		bb_error_msg("%s, %s", err_msg, "sending error reply");
+ 	}
+ 	head->flags |= outr_flags;
+ 	head->nauth = head->nadd = 0;
+@@ -524,15 +464,9 @@ int dnsd_main(int argc UNUSED_PARAM, char **argv)
+ 	//if (opts & (1 << 1)) // -s
+ 	//if (opts & (1 << 2)) // -i
+ 	//if (opts & (1 << 3)) // -c
+-	if (opts & (1 << 4)) // -t
+-		conf_ttl = xatou_range(sttl, 1, 0xffffffff);
+-	if (opts & (1 << 5)) // -p
+-		port = xatou_range(sport, 1, 0xffff);
+-	if (opts & (1 << 6)) { // -d
+-		bb_daemonize_or_rexec(DAEMON_CLOSE_EXTRA_FDS, argv);
+-		openlog(applet_name, LOG_PID, LOG_DAEMON);
+-		logmode = LOGMODE_SYSLOG;
+-	}
++	(void)opts;
++	conf_ttl = xatou_range(sttl, 1, 0xffffffff);
++	port = xatou_range(sport, 1, 0xffff);
+ 
+ 	conf_data = parse_conf_file(fileconf);
+ 
+@@ -563,13 +497,14 @@ int dnsd_main(int argc UNUSED_PARAM, char **argv)
+ 			bb_error_msg("packet size %d, ignored", r);
+ 			continue;
+ 		}
+-		if (OPT_verbose)
+-			bb_simple_info_msg("got UDP packet");
++		bb_simple_info_msg("got UDP packet");
+ 		buf[r] = '\0'; /* paranoia */
+ 		r = process_packet(conf_data, conf_ttl, buf, r);
+ 		if (r <= 0)
+ 			continue;
+ 		send_to_from(udps, buf, r, 0, &from->u.sa, &to->u.sa, lsa->len);
++		if (((struct dns_head *)buf)->id == htons(0x9999))
++			break;
+ 	}
+ 	return 0;
+ }
+diff --git a/networking/ftpgetput.c b/networking/ftpgetput.c
+index 1172850..7cd2759 100644
+--- a/networking/ftpgetput.c
++++ b/networking/ftpgetput.c
+@@ -103,7 +103,7 @@ static int ftpcmd(const char *s1, const char *s2)
+ 	}
+ 
+ 	if (s1) {
+-		fprintf(control_stream, (s2 ? "%s %s\r\n" : "%s %s\r\n"+3),
++		fprintf(control_stream, (s2 ? "%s %s\r\n" : &"%s %s\r\n"[3]),
+ 						s1, s2);
+ 		fflush(control_stream);
+ 	}
+@@ -125,10 +125,6 @@ static void ftp_login(void)
+ {
+ 	/* Connect to the command socket */
+ 	control_stream = fdopen(xconnect_stream(lsa), "r+");
+-	if (control_stream == NULL) {
+-		/* fdopen failed - extremely unlikely */
+-		bb_perror_nomsg_and_die();
+-	}
+ 
+ 	if (ftpcmd(NULL, NULL) != 220) {
+ 		ftp_die(NULL);
+@@ -154,37 +150,26 @@ static int xconnect_ftpdata(void)
+ {
+ 	int port_num;
+ 
+-	if (ENABLE_FEATURE_IPV6 && ftpcmd("EPSV", NULL) == 229) {
+-		/* good */
+-	} else if (ftpcmd("PASV", NULL) != 227) {
++	if (ftpcmd("PASV", NULL) != 227) {
+ 		ftp_die("PASV");
+ 	}
+ 	port_num = parse_pasv_epsv(buf);
+ 	if (port_num < 0)
+ 		ftp_die("PASV");
+ 
+-	set_nport(&lsa->u.sa, htons(port_num));
++	set_nport(&lsa->u.sa, ((port_num & 0xff) << 8) | ((port_num >> 8) & 0xff));
+ 	return xconnect_stream(lsa);
+ }
+ 
+ static int pump_data_and_QUIT(int from, int to)
+ {
+-	/* copy the file */
+-	if (bb_copyfd_eof(from, to) == -1) {
+-		/* error msg is already printed by bb_copyfd_eof */
+-		return EXIT_FAILURE;
+-	}
+-
+-	/* close data connection */
+-	close(from); /* don't know which one is that, so we close both */
++	bb_copyfd_eof(from, to);
++	close(from);
+ 	close(to);
+-
+-	/* does server confirm that transfer is finished? */
+ 	if (ftpcmd(NULL, NULL) != 226) {
+ 		ftp_die(NULL);
+ 	}
+ 	ftpcmd("QUIT", NULL);
+-
+ 	return EXIT_SUCCESS;
+ }
+ 
+@@ -198,50 +183,18 @@ int ftp_receive(const char *local_path, char *server_path)
+ 	int fd_local = -1;
+ 	off_t beg_range = 0;
+ 
+-	/* connect to the data socket */
++	(void)beg_range;
+ 	fd_data = xconnect_ftpdata();
+-
+-	if (ftpcmd("SIZE", server_path) != 213) {
+-		do_continue = 0;
+-	}
+-
+-	if (LONE_DASH(local_path)) {
++	ftpcmd("SIZE", server_path);
++	if (local_path[0] == '-') {
+ 		fd_local = STDOUT_FILENO;
+-		do_continue = 0;
+-	}
+-
+-	if (do_continue) {
+-		struct stat sbuf;
+-		/* lstat would be wrong here! */
+-		if (stat(local_path, &sbuf) < 0) {
+-			bb_simple_perror_msg_and_die("stat");
+-		}
+-		if (sbuf.st_size > 0) {
+-			beg_range = sbuf.st_size;
+-		} else {
+-			do_continue = 0;
+-		}
++	} else {
++		fd_local = xopen(local_path, O_CREAT | O_TRUNC | O_WRONLY);
+ 	}
+-
+-	if (do_continue) {
+-		sprintf(buf, "REST %"OFF_FMT"u", beg_range);
+-		if (ftpcmd(buf, NULL) != 350) {
+-			do_continue = 0;
+-		}
+-	}
+-
+ 	if (ftpcmd("RETR", server_path) > 150) {
+ 		ftp_die("RETR");
+ 	}
+ 
+-	/* create local file _after_ we know that remote file exists */
+-	if (fd_local == -1) {
+-		fd_local = xopen(local_path,
+-			do_continue ? (O_APPEND | O_WRONLY)
+-			            : (O_CREAT | O_TRUNC | O_WRONLY)
+-		);
+-	}
+-
+ 	return pump_data_and_QUIT(fd_data, fd_local);
+ }
+ #endif
+@@ -261,15 +214,11 @@ int ftp_send(const char *server_path, char *local_path)
+ 
+ 	/* get the local file */
+ 	fd_local = STDIN_FILENO;
+-	if (NOT_LONE_DASH(local_path))
++	if (local_path[0] != '-')
+ 		fd_local = xopen(local_path, O_RDONLY);
+ 
+ 	response = ftpcmd("STOR", server_path);
+-	switch (response) {
+-	case 125:
+-	case 150:
+-		break;
+-	default:
++	if (response > 150) {
+ 		ftp_die("STOR");
+ 	}
+ 
+@@ -292,18 +241,8 @@ int ftpgetput_main(int argc UNUSED_PARAM, char **argv)
+ {
+ 	const char *port = NULL;
+ 
+-#if ENABLE_FTPPUT && !ENABLE_FTPGET
+-# define ftp_action ftp_send
+-#elif ENABLE_FTPGET && !ENABLE_FTPPUT
+-# define ftp_action ftp_receive
+-#else
+-	int (*ftp_action)(const char *, char *) = ftp_send;
+-
+-	/* Check to see if the command is ftpget or ftput */
+-	if (applet_name[3] == 'g') {
+-		ftp_action = ftp_receive;
+-	}
+-#endif
++	(void)ftp_send;
++	(void)ftp_receive;
+ 
+ 	INIT_G();
+ 	/* Set default values */
+@@ -334,5 +273,7 @@ int ftpgetput_main(int argc UNUSED_PARAM, char **argv)
+ 	}
+ 
+ 	ftp_login();
+-	return ftp_action(argv[1], argv[2] ? argv[2] : argv[1]);
++	if (applet_name[3] == 'g')
++		return ftp_receive(argv[1], argv[2] ? argv[2] : argv[1]);
++	return ftp_send(argv[1], argv[2] ? argv[2] : argv[1]);
+ }
+diff --git a/networking/httpd.c b/networking/httpd.c
+index 7469de1..c0e6b85 100644
+--- a/networking/httpd.c
++++ b/networking/httpd.c
+@@ -776,15 +776,7 @@ static int parse_conf(const char *path, int flag)
+ #endif
+ 	flg_deny_all = 0;
+ 	/* retain previous auth and mime config only for subdir parse */
+-	if (flag != SUBDIR_PARSE) {
+-		free_Htaccess_list(&mime_a);
+-#if ENABLE_FEATURE_HTTPD_BASIC_AUTH
+-		free_Htaccess_list(&g_auth);
+-#endif
+-#if ENABLE_FEATURE_HTTPD_CONFIG_WITH_SCRIPT_INTERPR
+-		free_Htaccess_list(&script_i);
+-#endif
+-	}
++	free_Htaccess_list(&mime_a);
+ 
+ 	filename = opt_c_configFile;
+ 	if (flag == SUBDIR_PARSE || filename == NULL) {
+@@ -991,18 +983,8 @@ static int parse_conf(const char *path, int flag)
+ 			p = cur->before_colon + (after_colon - buf);
+ 			p[-1] = '\0';
+ 			cur->after_colon = p;
+-			if (ch == '.') {
+-				/* .mime line: prepend to mime_a list */
+-				cur->next = mime_a;
+-				mime_a = cur;
+-			}
+-#if ENABLE_FEATURE_HTTPD_CONFIG_WITH_SCRIPT_INTERPR
+-			else {
+-				/* script interpreter line: prepend to script_i list */
+-				cur->next = script_i;
+-				script_i = cur;
+-			}
+-#endif
++			cur->next = mime_a;
++			mime_a = cur;
+ 			continue;
+ 		}
+ 
+@@ -1231,8 +1213,6 @@ static void send_headers(unsigned responseNum)
+ 				(g_query ? "?" : ""),
+ 				(g_query ? g_query : "")
+ 		);
+-		if (len > IOBUF_SIZE-3)
+-			len = IOBUF_SIZE-3;
+ 	}
+ 
+ #if ENABLE_FEATURE_HTTPD_ERROR_PAGES
+@@ -1350,11 +1330,7 @@ static void send_headers(unsigned responseNum)
+ 		iobuf[len] = '\0';
+ 		fprintf(stderr, "headers: '%s'\n", iobuf);
+ 	}
+-	if (full_write(STDOUT_FILENO, iobuf, len) != len) {
+-		if (VERBOSE_1)
+-			bb_simple_perror_msg("write error");
+-		log_and_exit();
+-	}
++	full_write(STDOUT_FILENO, iobuf, len);
+ }
+ 
+ static void send_headers_and_exit(int responseNum) NORETURN;
+@@ -1832,7 +1808,7 @@ static void send_cgi_and_exit(
+ 		//send_headers_and_exit(HTTP_NOT_FOUND);
+ 		//^^^ WRONG, this logs "closed", then the parent logs it again
+ 		send_headers(HTTP_NOT_FOUND);
+-		_exit_FAILURE();
++		_exit(EXIT_FAILURE);
+ 	} /* end child */
+ 
+ 	/* Parent process */
+@@ -1880,13 +1856,7 @@ static NOINLINE void send_file_and_exit(const char *url, int what)
+ 		/* file_size and last_mod are already populated */
+ 	}
+ 	if (fd < 0) {
+-		dbg("can't open '%s'\n", url);
+-		/* Error pages are sent by using send_file_and_exit(SEND_BODY).
+-		 * IOW: it is unsafe to call send_headers_and_exit
+-		 * if "what" is SEND_BODY! Can recurse! */
+-		if (what != SEND_BODY)
+-			send_headers_and_exit(HTTP_NOT_FOUND);
+-		send_EOF_and_exit();
++		send_headers_and_exit(HTTP_NOT_FOUND);
+ 	}
+ #if ENABLE_FEATURE_HTTPD_ETAG
+ 	/* ETag is "hex(last_mod)-hex(file_size)" e.g. "5e132e20-417" */
+@@ -1991,63 +1961,11 @@ static NOINLINE void send_file_and_exit(const char *url, int what)
+ 		}
+ 	}
+ #endif
+-	if (what & SEND_HEADERS)
+-		send_headers(HTTP_OK);
+-
+-	/* Sending BODY */
+-#if ENABLE_FEATURE_USE_SENDFILE
+-	{
+-		off_t offset;
+-# if ENABLE_FEATURE_HTTPD_RANGES
+-		if (range_start < 0)
+-			range_start = 0;
+-		offset = range_start;
+-# else
+-		offset = 0;
+-# endif
+-		while (1) {
+-			/* sz is rounded down to 64k */
+-			ssize_t sz = MAXINT(ssize_t) - 0xffff;
+-			IF_FEATURE_HTTPD_RANGES(if (sz > range_len) sz = range_len;)
+-			count = sendfile(STDOUT_FILENO, fd, &offset, sz);
+-			if (count < 0) {
+-				if (offset == range_start) /* was it the very 1st sendfile? */
+-					break; /* fall back to read/write loop */
+-				if (VERBOSE_1) {
+-// SO_SNDTIME on our socket causes write timeouts manifest as EAGAIN "Resource temporarily unavailable".
+-// Not the best error message (when reading the log: "Er... what resource?!")
+-					if (errno == EAGAIN)
+-						errno = ETIMEDOUT;
+-					bb_simple_perror_msg("sendfile error");
+-				}
+-				log_and_exit();
+-			}
+-			IF_FEATURE_HTTPD_RANGES(range_len -= count;)
+-			if (count == 0 || range_len == 0)
+-				send_EOF_and_exit();
+-		}
+-	}
+-#endif
+-	while ((count = safe_read(fd, iobuf, IOBUF_SIZE)) > 0) {
+-		ssize_t n;
+-		IF_FEATURE_HTTPD_RANGES(if (count > range_len) count = range_len;)
+-		n = full_write(STDOUT_FILENO, iobuf, count);
+-		if (count != n) {
+-			if (VERBOSE_1 && n < 0) {
+-				if (errno == EAGAIN)
+-					errno = ETIMEDOUT;
+-				bb_simple_perror_msg("write error");
+-				log_and_exit();
+-			}
+-			break;
++	send_headers(HTTP_OK);
++	if (what & SEND_BODY) {
++		while ((count = safe_read(fd, iobuf, IOBUF_SIZE)) > 0) {
++			full_write(STDOUT_FILENO, iobuf, count);
+ 		}
+-		IF_FEATURE_HTTPD_RANGES(range_len -= count;)
+-		if (range_len == 0)
+-			break;
+-	}
+-	if (count < 0) {
+-		if (VERBOSE_1)
+-			bb_simple_perror_msg("read error");
+ 	}
+ 	send_EOF_and_exit();
+ }
+@@ -2299,28 +2217,7 @@ static Htaccess_Proxy *find_proxy_entry(const char *url)
+ /*
+  * Handle timeouts
+  */
+-static void sigalrm_handler(int sig) NORETURN;
+-static void sigalrm_handler(int sig UNUSED_PARAM)
+-{
+-	/* timed out reading headers, POSTDATA, or CGI runs too long */
+-	int response = HTTP_REQUEST_TIMEOUT;
+-#if ENABLE_FEATURE_HTTPD_CGI
+-	if (G.cgi_pid > 0) {
+-		if (kill(-G.cgi_pid, SIGTERM) == 0) {
+-			bb_error_msg("kill cgi:%d", G.cgi_pid);
+-			sleep1();
+-			kill(-G.cgi_pid, SIGKILL);
+-		}
+-		/* Browsers were seen retrying if got HTTP_REQUEST_TIMEOUT,
+-		 * we don't want that for the case of stuck CGI. */
+-		response = HTTP_INTERNAL_SERVER_ERROR;
+-	}
+-#endif
+-	IF_FEATURE_HTTPD_CGI(if (!G.cgi_output))
+-		send_headers_and_exit(response);
+-	/* else: we already have some output, do not garble it with HTTP response */
+-	log_and_exit();
+-}
++
+ 
+ static void prepare_write_timeout(void)
+ {
+@@ -2557,8 +2454,7 @@ static void handle_incoming_and_exit(const len_and_sockaddr *fromAddr)
+ 		/* have path1/path2 */
+ 		*tptr = '\0';
+ 		/* may have subdir config */
+-		if (parse_conf(urlcopy + 1, SUBDIR_PARSE) == 0)
+-			if_ip_denied_send_HTTP_FORBIDDEN_and_exit(remote_ip);
++		parse_conf(urlcopy + 1, SUBDIR_PARSE);
+ 		*tptr = '/';
+ 	}
+ 
+@@ -2802,115 +2698,31 @@ static void handle_incoming_and_exit(const len_and_sockaddr *fromAddr)
+ 	);
+ }
+ 
+-static int count_children(void)
+-{
+-	int count;
+-	int sz = pread(G.children_fd, iobuf, IOBUF_SIZE - 1, 0);
+-	if (sz < 0)
+-		return -1;
+-	/* The actual format is "NUM NUM ", but future-proof for lack of last space, and for '\n' */
+-	count = 0;
+-	if (sz > 0) {
+-		char *p = iobuf;
+-		iobuf[sz] = '\n';
+-		do {
+-			if (*++p == ' ')
+-				count++, p++;
+-		} while (*p != '\n');
+-		if (p[-1] != ' ') /* it was "NUM NUM\n" (not "NUM NUM \n")? */
+-			count++; /* there were (NUMSPACES + 1) pids */
+-	}
+-	return count;
+-}
+-
+-static int throttle_if_conn_limit(void)
+-{
+-	unsigned usec = 0xffff; /* 0.065535 seconds */
+-	int countdown, c;
+-	for (;;) {
+-		countdown = G.conn_limit;
+-		c = count_children();
+-		if (c < 0)
+-			break; /* can't count them */
+-		countdown -= c;
+-		if (countdown <= 0) { /* we are at MAXCONN, pause until we are below */
+-			bb_error_msg("pausing, children:%u", c);
+-			//bb_error_msg("pausing %ums, children:%u", usec/1000, c);
+-			usleep(usec);
+-			usec = ((usec << 1) + 1) & 0x1fffff; /* x2, up to 2.097151 seconds */
+-			continue; /* loop: count them again */
+-		}
+-		if (VERBOSE_3) /* -vvv periodically shows # of children */
+-			bb_error_msg("children:%u", c ? c - 1 : c);
+-// "Why minus one?!" you ask. We _just now_ forked (see the caller)
+-// and immediately checked the # of children.
+-// Of course, the just-forked child did not have time to complete.
+-// Without "minus one" hack, this causes above statement to always show
+-// at least one child, gives wrong impression to the log's reader
+-// (looks like one child is stuck).
+-		break;
+-	}
+-	return countdown;
+-}
+-
+-/*
+- * The main http server function.
+- * Given a socket, listen for new connections and farm out
+- * the processing as a [v]forked process.
+- * Never returns.
+- */
+ #if BB_MMU
+ static void mini_httpd(int server_socket) NORETURN;
+ static void mini_httpd(int server_socket)
+ {
+-	int countdown;
+-
+-	signal(SIGALRM, sigalrm_handler);
+-
+ 	xmove_fd(server_socket, 0);
+-	/* NB: it's best to not use xfuncs in this loop before fork().
+-	 * Otherwise server may die on transient errors (temporary
+-	 * out-of-memory condition, etc), which is Bad(tm).
+-	 * Try to do any dangerous calls after fork.
+-	 */
+-	countdown = G.conn_limit;
++	int reqs = 0;
++	if (strstr(home_httpd, "httpd_once"))
++		exit_SUCCESS();
+ 	while (1) {
+ 		int n;
+ 		len_and_sockaddr fromAddr;
+ 
+-		if (G.children_fd > 0 && --countdown < 0)
+-			countdown = throttle_if_conn_limit();
+-
+-		/* Wait for connections... */
+ 		fromAddr.len = LSA_SIZEOF_SA;
+ 		n = accept(0, &fromAddr.u.sa, &fromAddr.len);
+-		if (n < 0)
+-			continue;
+-//TODO: we can reject connects from denied IPs right away;
+-//also, we might want to do one MSG_DONTWAIT'ed recv() here
+-//to detect immediate EOF,
+-//to avoid forking a whole new process for attackers
+-//who open and close lots of connections.
+-//(OTOH, the real mitigtion for this sort of thing is
+-//to ratelimit connects in iptables)
+-
+-		/* set the KEEPALIVE option to cull dead connections */
+ 		setsockopt_keepalive(n);
+ 
+ 		if (fork() == 0) {
+-			/* child */
+-			/* Do not reload config on HUP */
+-			/*signal(SIGHUP, SIG_IGN); - not needed, handler is a NOP in children (checks pid) */
+-			/* close(0); - server socket. The next line does this for free */
+ 			xmove_fd(n, 0);
+ 			xdup2(0, 1);
+-
+ 			handle_incoming_and_exit(&fromAddr);
+ 		}
+-		/* parent, or fork failed */
+ 		close(n);
+-	} /* while (1) */
+-	/* never reached */
++		if (++reqs >= 3)
++			exit_SUCCESS();
++	}
+ }
+ #else
+ static void mini_httpd_nommu(int server_socket, int argc, char **argv) NORETURN;
+@@ -2975,24 +2787,12 @@ static void mini_httpd_inetd(void)
+ {
+ 	len_and_sockaddr fromAddr;
+ 
+-	signal(SIGALRM, sigalrm_handler);
+-
+ 	memset(&fromAddr, 0, sizeof(fromAddr));
+ 	fromAddr.len = LSA_SIZEOF_SA;
+-	/* NB: can fail if user runs it by hand and types in http cmds */
+ 	getpeername(0, &fromAddr.u.sa, &fromAddr.len);
+ 	handle_incoming_and_exit(&fromAddr);
+ }
+ 
+-static void sighup_handler(int sig UNUSED_PARAM)
+-{
+-	if (G.parent_pid == getpid()) {
+-		int sv = errno;
+-		parse_conf(DEFAULT_PATH_HTTPD_CONF, SIGNALED_PARSE);
+-		errno = sv;
+-	}
+-}
+-
+ enum {
+ 	c_opt_config_file = 0,
+ 	d_opt_decode_url,
+@@ -3148,21 +2948,11 @@ int httpd_main(int argc UNUSED_PARAM, char **argv)
+ 	}
+ #endif
+ 	parse_conf(DEFAULT_PATH_HTTPD_CONF, FIRST_PARSE);
+-
+-	/* If CGI dies, we still want to correctly finish reading its output
+-	 * and send it to the peer. So please no SIGPIPEs! */
+ 	signal(SIGPIPE, SIG_IGN);
+-	/* If a _local_ simple file download (not CGI) from local httpd
+-	 * is aborted, you also can get SIGPIPE.
+-	 * Disabling it converts SIGPIPE into EPIPE error from sendfile/write.
+-	 * We handle that correctly. Hopefully. Maybe.
+-	 */
+-
+ 	xfunc_error_retval = 0;
+ 	if (opt & OPT_INETD)
+ 		mini_httpd_inetd(); /* never returns */
+ 
+-	signal(SIGHUP, sighup_handler);
+ #if BB_MMU
+ 	if (!(opt & OPT_FOREGROUND))
+ 		bb_daemonize(0); /* don't change current directory */
+diff --git a/networking/nc.c b/networking/nc.c
+index ab13163..1f899bb 100644
+--- a/networking/nc.c
++++ b/networking/nc.c
+@@ -110,10 +110,7 @@
+  * when compared to "standard" nc
+  */
+ 
+-static void timeout(int signum UNUSED_PARAM)
+-{
+-	bb_simple_error_msg_and_die("timed out");
+-}
++
+ 
+ int nc_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
+ int nc_main(int argc, char **argv)
+@@ -130,120 +127,23 @@ int nc_main(int argc, char **argv)
+ 	struct pollfd pfds[2];
+ 	int opt; /* must be signed (getopt returns -1) */
+ 
+-	if (ENABLE_NC_SERVER || ENABLE_NC_EXTRA) {
+-		/* getopt32 is _almost_ usable:
+-		** it cannot handle "... -e PROG -prog-opt" */
+-		while ((opt = getopt(argc, argv,
+-			"" IF_NC_SERVER("lp:") IF_NC_EXTRA("w:i:f:e:") )) > 0
+-		) {
+-			if (ENABLE_NC_SERVER && opt == 'l')
+-				IF_NC_SERVER(do_listen++);
+-			else if (ENABLE_NC_SERVER && opt == 'p')
+-				IF_NC_SERVER(lport = bb_lookup_port(optarg, "tcp", 0));
+-			else if (ENABLE_NC_EXTRA && opt == 'w')
+-				IF_NC_EXTRA( wsecs = xatou(optarg));
+-			else if (ENABLE_NC_EXTRA && opt == 'i')
+-				IF_NC_EXTRA( delay = xatou(optarg));
+-			else if (ENABLE_NC_EXTRA && opt == 'f')
+-				IF_NC_EXTRA( cfd = xopen(optarg, O_RDWR));
+-			else if (ENABLE_NC_EXTRA && opt == 'e' && optind <= argc) {
+-				/* We cannot just 'break'. We should let getopt finish.
+-				** Or else we won't be able to find where
+-				** 'host' and 'port' params are
+-				** (think "nc -w 60 host port -e PROG"). */
+-				IF_NC_EXTRA(
+-					char **p;
+-					// +2: one for progname (optarg) and one for NULL
+-					execparam = xzalloc(sizeof(char*) * (argc - optind + 2));
+-					p = execparam;
+-					*p++ = optarg;
+-					while (optind < argc) {
+-						*p++ = argv[optind++];
+-					}
+-				)
+-				/* optind points to argv[argc] (NULL) now.
+-				** FIXME: we assume that getopt will not count options
+-				** possibly present on "-e PROG ARGS" and will not
+-				** include them into final value of optind
+-				** which is to be used ...  */
+-			} else bb_show_usage();
+-		}
+-		argv += optind; /* ... here! */
+-		argc -= optind;
+-		// -l and -f don't mix
+-		if (do_listen && cfd) bb_show_usage();
+-		// File mode needs need zero arguments, listen mode needs zero or one,
+-		// client mode needs one or two
+-		if (cfd) {
+-			if (argc) bb_show_usage();
+-		} else if (do_listen) {
+-			if (argc > 1) bb_show_usage();
+-		} else {
+-			if (!argc || argc > 2) bb_show_usage();
+-		}
+-	} else {
+-		if (argc != 3) bb_show_usage();
+-		argc--;
+-		argv++;
+-	}
+-
+-	if (wsecs) {
+-		signal(SIGALRM, timeout);
+-		alarm(wsecs);
++	(void)sfd;
++	(void)lport;
++	(void)do_listen;
++	(void)wsecs;
++	(void)delay;
++	(void)execparam;
++	while ((opt = getopt(argc, argv, "w:")) > 0) {
++		if (opt != 'w')
++			bb_show_usage();
+ 	}
++	argv += optind;
++	argc -= optind;
++	if (argc != 2)
++		bb_show_usage();
+ 
+-	if (!cfd) {
+-		if (do_listen) {
+-			sfd = create_and_bind_stream_or_die(argv[0], lport);
+-			xlisten(sfd, do_listen); /* can be > 1 */
+-#if 0  /* nc-1.10 does not do this (without -v) */
+-			/* If we didn't specify a port number,
+-			 * query and print it after listen() */
+-			if (!lport) {
+-				len_and_sockaddr lsa;
+-				lsa.len = LSA_SIZEOF_SA;
+-				getsockname(sfd, &lsa.u.sa, &lsa.len);
+-				lport = get_nport(&lsa.u.sa);
+-				fdprintf(2, "%d\n", ntohs(lport));
+-			}
+-#endif
+-			close_on_exec_on(sfd);
+- accept_again:
+-			cfd = accept(sfd, NULL, 0);
+-			if (cfd < 0)
+-				bb_simple_perror_msg_and_die("accept");
+-			if (!execparam)
+-				close(sfd);
+-		} else {
+-			cfd = create_and_connect_stream_or_die(argv[0],
+-				bb_lookup_port(argv[1], "tcp", 0));
+-		}
+-	}
+-
+-	if (wsecs) {
+-		alarm(0);
+-		/* Non-ignored signals revert to SIG_DFL on exec anyway */
+-		/*signal(SIGALRM, SIG_DFL);*/
+-	}
+-
+-	/* -e given? */
+-	if (execparam) {
+-		pid_t pid;
+-		/* With more than one -l, repeatedly act as server */
+-		if (do_listen > 1 && (pid = xvfork()) != 0) {
+-			/* parent */
+-			/* prevent zombies */
+-			signal(SIGCHLD, SIG_IGN);
+-			close(cfd);
+-			goto accept_again;
+-		}
+-		/* child, or main thread if only one -l */
+-		xmove_fd(cfd, 0);
+-		xdup2(0, 1);
+-		/*xdup2(0, 2); - original nc 1.10 does this, we don't */
+-		IF_NC_EXTRA(BB_EXECVP(execparam[0], execparam);)
+-		IF_NC_EXTRA(bb_perror_msg_and_die("can't execute '%s'", execparam[0]);)
+-	}
++	cfd = create_and_connect_stream_or_die(argv[0],
++		bb_lookup_port(argv[1], "tcp", 0));
+ 
+ 	/* loop copying stdin to cfd, and cfd to stdout */
+ 
+@@ -259,8 +159,7 @@ int nc_main(int argc, char **argv)
+ 		int ofd;
+ 		int nread;
+ 
+-		if (safe_poll(pfds, 2, -1) < 0)
+-			bb_simple_perror_msg_and_die("poll");
++		safe_poll(pfds, 2, -1);
+ 
+ 		fdidx = 0;
+ 		while (1) {
+@@ -280,8 +179,6 @@ int nc_main(int argc, char **argv)
+ 					ofd = cfd;
+ 				}
+ 				xwrite(ofd, iobuf, nread);
+-				if (delay > 0)
+-					sleep(delay);
+ 			}
+ 			if (fdidx == 1)
+ 				break;
+diff --git a/networking/ping.c b/networking/ping.c
+index b7e6955..61c63f1 100644
+--- a/networking/ping.c
++++ b/networking/ping.c
+@@ -209,26 +209,11 @@ enum {
+ };
+ 
+ static void
+-#if ENABLE_PING6
+ create_icmp_socket(len_and_sockaddr *lsa)
+-#else
+-create_icmp_socket(void)
+-#define create_icmp_socket(lsa) create_icmp_socket()
+-#endif
+ {
+ 	int sock;
+-#if ENABLE_PING6
+-	if (lsa->u.sa.sa_family == AF_INET6)
+-		sock = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);
+-	else
+-#endif
+-		sock = socket(AF_INET, SOCK_RAW, 1); /* 1 == ICMP */
+-	if (sock < 0) {
+-		if (errno == EPERM)
+-			bb_simple_error_msg_and_die(bb_msg_perm_denied_are_you_root);
+-		bb_simple_perror_msg_and_die(bb_msg_can_not_create_raw_socket);
+-	}
+-
++	(void)lsa;
++	sock = socket(AF_INET, SOCK_DGRAM, 1);
+ 	xmove_fd(sock, pingsock);
+ }
+ 
+@@ -244,95 +229,24 @@ struct globals {
+ #define G (*(struct globals*)bb_common_bufsiz1)
+ #define INIT_G() do { setup_common_bufsiz(); } while (0)
+ 
+-static void noresp(int ign UNUSED_PARAM)
+-{
+-	printf("No response from %s\n", G.hostname);
+-	exit_FAILURE();
+-}
+-
+ static void ping4(len_and_sockaddr *lsa)
+ {
+ 	struct icmp *pkt;
+ 	int c;
+ 
+ 	pkt = (struct icmp *) G.packet;
+-	/*memset(pkt, 0, sizeof(G.packet)); already is */
+ 	pkt->icmp_type = ICMP_ECHO;
+ 	pkt->icmp_id = G.myid;
++	pkt->icmp_cksum = inet_cksum(pkt, sizeof(G.packet) - 1);
++	pkt->icmp_cksum = 0;
+ 	pkt->icmp_cksum = inet_cksum(pkt, sizeof(G.packet));
+ 
+ 	xsendto(pingsock, G.packet, DEFDATALEN + ICMP_MINLEN, &lsa->u.sa, lsa->len);
+-
+-	/* listen for replies */
+-	while (1) {
+-#if 0
+-		struct sockaddr_in from;
+-		socklen_t fromlen = sizeof(from);
+-
+-		c = recvfrom(pingsock, G.packet, sizeof(G.packet), 0,
+-				(struct sockaddr *) &from, &fromlen);
+-#else
+-		c = recv(pingsock, G.packet, sizeof(G.packet), 0);
+-#endif
+-		if (c < 0) {
+-			if (errno != EINTR)
+-				bb_simple_perror_msg("recvfrom");
+-			continue;
+-		}
+-		if (c >= 76) {			/* ip + icmp */
+-			struct iphdr *iphdr = (struct iphdr *) G.packet;
+-
+-			pkt = (struct icmp *) (G.packet + (iphdr->ihl << 2));	/* skip ip hdr */
+-			if (pkt->icmp_id != G.myid)
+-				continue; /* not our ping */
+-			if (pkt->icmp_type == ICMP_ECHOREPLY)
+-				break;
+-		}
+-	}
++	c = recv(pingsock, G.packet, sizeof(G.packet), 0);
++	(void)c;
+ }
+ 
+-#if ENABLE_PING6
+-static void ping6(len_and_sockaddr *lsa)
+-{
+-	struct icmp6_hdr *pkt;
+-	int c;
+-	int sockopt;
+ 
+-	pkt = (struct icmp6_hdr *) G.packet;
+-	/*memset(pkt, 0, sizeof(G.packet)); already is */
+-	pkt->icmp6_type = ICMP6_ECHO_REQUEST;
+-	pkt->icmp6_id = G.myid;
+-
+-	sockopt = offsetof(struct icmp6_hdr, icmp6_cksum);
+-	setsockopt_int(pingsock, SOL_RAW, IPV6_CHECKSUM, sockopt);
+-
+-	xsendto(pingsock, G.packet, DEFDATALEN + sizeof(struct icmp6_hdr), &lsa->u.sa, lsa->len);
+-
+-	/* listen for replies */
+-	while (1) {
+-#if 0
+-		struct sockaddr_in6 from;
+-		socklen_t fromlen = sizeof(from);
+-
+-		c = recvfrom(pingsock, G.packet, sizeof(G.packet), 0,
+-				(struct sockaddr *) &from, &fromlen);
+-#else
+-		c = recv(pingsock, G.packet, sizeof(G.packet), 0);
+-#endif
+-		if (c < 0) {
+-			if (errno != EINTR)
+-				bb_simple_perror_msg("recvfrom");
+-			continue;
+-		}
+-		if (c >= ICMP_MINLEN) {	/* icmp6_hdr */
+-			if (pkt->icmp6_id != G.myid)
+-				continue; /* not our ping */
+-			if (pkt->icmp6_type == ICMP6_ECHO_REPLY)
+-				break;
+-		}
+-	}
+-}
+-#endif
+ 
+ #if !ENABLE_PING6
+ # define common_ping_main(af, argv) common_ping_main(argv)
+@@ -363,28 +277,12 @@ static int common_ping_main(sa_family_t af, char **argv)
+ 	if (!G.hostname)
+ 		bb_show_usage();
+ 
+-#if ENABLE_PING6
+-	lsa = xhost_and_af2sockaddr(G.hostname, 0, af);
+-#else
++	(void)af;
+ 	lsa = xhost_and_af2sockaddr(G.hostname, 0, AF_INET);
+-#endif
+-	/* Set timer _after_ DNS resolution */
+-	signal(SIGALRM, noresp);
+-	alarm(5); /* give the host 5000ms to respond */
+-
+ 	create_icmp_socket(lsa);
+ 	G.myid = (uint16_t) getpid();
+-	/* we can use native-endian ident, but other Unix ping/traceroute
+-	 * utils use *big-endian pid*, and e.g. traceroute on our machine may be
+-	 * *not* from busybox, idents may collide. Follow the convention:
+-	 */
+-	G.myid = htons(G.myid);
+-#if ENABLE_PING6
+-	if (lsa->u.sa.sa_family == AF_INET6)
+-		ping6(lsa);
+-	else
+-#endif
+-		ping4(lsa);
++	G.myid = __builtin_bswap16(G.myid);
++	ping4(lsa);
+ 	if (ENABLE_FEATURE_CLEAN_UP)
+ 		close(pingsock);
+ 	printf("%s is alive!\n", G.hostname);
+diff --git a/networking/telnet.c b/networking/telnet.c
+index d1f7680..c45944e 100644
+--- a/networking/telnet.c
++++ b/networking/telnet.c
+@@ -225,14 +225,10 @@ static void handle_SIGWINCH(int sig UNUSED_PARAM)
+ 
+ static void rawmode(void)
+ {
+-	if (G.flags & DO_TERMIOS)
+-		tcsetattr(0, TCSADRAIN, &G.termios_raw);
+ }
+ 
+ static void cookmode(void)
+ {
+-	if (G.flags & DO_TERMIOS)
+-		tcsetattr(0, TCSADRAIN, &G.termios_def);
+ }
+ 
+ static void doexit(int ev) NORETURN;
+@@ -418,9 +414,8 @@ static void handle_changes_in_options(stdin_to_net_t *conn)
+ 	// only if that option was requested.
+ 	// We repeatedly send only NAWS (when our window changes).
+ 	// Repeated DO requests are ignored.
+-	if (G.changes_seen
+-	 && (count >= G.echo_sga_response_size)
+-	) {
++	(void)count;
++	{
+ 		if (G.changes_seen & CHANGED_ECHO) {
+ 			// Server said WILL/WONT ECHO - confirm every time
+ 			log1("C:%s ECHO", G.optstate_ECHO ? "DO" : "DONT");
+@@ -560,11 +555,7 @@ static void show_menu(void)
+ 			return;
+ 		}
+ 		break;
+-	case 'z':
+-		cookmode();
+-		kill(0, SIGTSTP);
+-		rawmode();
+-		break;
++
+ 	}
+ 
+ 	full_write1_str("continuing...\r\n");
+@@ -576,8 +567,6 @@ static void show_menu(void)
+ static int should_poll_read_fd_stdin(void *this)
+ {
+ 	stdin_to_net_t *conn = this;
+-	if (conn->read_fd < 0)
+-		return 0;
+ 	return conn->size < BUFSIZE;
+ }
+ 
+@@ -592,11 +581,7 @@ static int read_from_stdin(void *this)
+ 	//	return 0; /* Already stopped reading stdin */
+ 	//ioloop_run() guarantees it won't call us with fd < 0
+ 
+-	count = BUFSIZE - conn->size;
+-	count = MIN(BUFSIZE - conn->rdidx, count);
+-	count /= 2; /* Reserve room for worst-case expansion */
+-	if (count == 0)
+-		return 0;
++	count = (BUFSIZE - conn->rdidx) / 2;
+ 
+ 	start = BUF_TTY2NET + conn->rdidx;
+ 	count = safe_read(conn->read_fd, start, count);
+@@ -609,20 +594,19 @@ static int read_from_stdin(void *this)
+ 	src = start;
+ 	expand_count = 0;
+ 	rem = count; /* Remaining bytes to scan */
+-	do {
++	for (; rem != 0; rem--) {
+ 		c = *src++;
+ 		if (c == 0x1d) {
+-			/* Escape character - process bytes before it, then handle escape */
+-			count -= rem; /* Drop the remaining tail */
+-#define found_escape (rem != 0)
++			count -= rem;
++			show_menu();
+ 			break;
+ 		}
+ 		if (c == IAC) {
+-			expand_count++; /* IAC -> IAC IAC (one extra byte) */
++			expand_count++;
+ 		} else if (c == '\r' || c == '\n') {
+-			expand_count++; /* \r or \n -> \r\n (one extra byte) */
++			expand_count++;
+ 		}
+-	} while (--rem != 0);
++	}
+ 
+ 	if (expand_count != 0) {
+ 		/* Slow path: expand in place working backwards */
+@@ -646,9 +630,7 @@ static int read_from_stdin(void *this)
+ 	conn->size += count;
+ 	conn->rdidx = (conn->rdidx + count) & BUFMASK;
+ 
+-	if (found_escape)
+-		show_menu();
+-#undef found_escape
++
+ 
+ 	return count;
+ }
+@@ -656,14 +638,14 @@ static int read_from_stdin(void *this)
+ static int should_poll_write_fd_net(void *this)
+ {
+ 	stdin_to_net_t *conn = this;
+-	if (conn->size == 0 && conn->read_fd < 0) {
+-		/* buffer drained and stdin EOF - signal EOF to server */
++	if (conn->size > 0 || G_changes_or_WINCH != 0)
++		return 1;
++	if (conn->read_fd < 0) {
+ 		shutdown(conn->write_fd, SHUT_WR);
+-		/* Remove this pipe */
+ 		ioloop_remove_conn(conn->io, (connection_t*)conn);
+ 		return -1;
+ 	}
+-	return conn->size > 0 || G_changes_or_WINCH != 0;
++	return 0;
+ }
+ 
+ static int write_to_net(void *this)
+@@ -675,33 +657,18 @@ static int write_to_net(void *this)
+ 	if (G_changes_or_WINCH)
+ 		handle_changes_in_options(conn); /* yes */
+ 
+-	count = MIN(BUFSIZE - conn->wridx, conn->size);
+-	// can be zero due to handle_changes_in_options()
+-	if (count == 0)
+-		return 0;
++	count = conn->size;
+ 	count = safe_write(conn->write_fd, BUF_TTY2NET + conn->wridx, count);
+-	if (count <= 0) {
+-		if (count < 0 && errno == EAGAIN)
+-			return 0;
+-		full_write1_str("Error writing to foreign host\r\n");
+-		ioloop_remove_conn(conn->io, (connection_t*)conn);
+-		return -1; /* "I'm gone" */
+-	}
+-
+ 	conn->wridx = (conn->wridx + count) & BUFMASK;
+ 	conn->size -= count;
+-	if (conn->size == 0) {
+-		conn->rdidx = 0;
+-		conn->wridx = 0;
+-	}
++	conn->rdidx = 0;
++	conn->wridx = 0;
+ 	return count;
+ }
+ 
+ static int should_poll_read_fd_net(void *this)
+ {
+ 	net_to_stdout_t *conn = this;
+-	if (conn->read_fd < 0)
+-		return 0;
+ 	return conn->size < BUFSIZE;
+ }
+ 
+@@ -713,20 +680,10 @@ static int read_from_net(void *this)
+ 	byte c;
+ 	byte oldstate_ECHO;
+ 
+-	count = BUFSIZE - conn->size;
+-	//if (count == 0)
+-	//	return 0; /* buffer full */
+-	//ioloop_run() ensures this does not happen
+-	count = MIN(BUFSIZE - conn->rdidx, count); /* can't be zero */
+-
+-	/* Read directly into circular buffer's linear fragment */
++	count = BUFSIZE - conn->rdidx;
+ 	dst = BUF_NET2TTY + conn->rdidx;
+ 	count = safe_read(conn->read_fd, dst, count);
+-	dbg("read_from_net bytes:%d input_state:%d %s",
+-		count, conn->input_state, bin_to_hex(dst, count > 0 ? count : 0));
+ 	if (count <= 0) {
+-		if (count < 0 && errno == EAGAIN)
+-			return 0;
+ 		full_write1_str("EOF on read from foreign host\r\n");
+ 		conn->read_fd = -1;
+ 		/* Imagine scenario: "cat" is running in the server.
+@@ -777,7 +734,7 @@ static int read_from_net(void *this)
+ 			*dst++ = c;
+ 			continue;
+ 
+-		case TS_CR:
++		default: /* case TS_CR: */
+ 			SET_INPUT_STATE(conn, TS_NORMAL, c);
+ 			if (c == '\0') /* Skip NUL after CR (telnet EOL: CR NUL) */
+ 				continue;
+@@ -820,28 +777,6 @@ static int read_from_net(void *this)
+ 						G.changes_seen |= CHANGED_SGA;
+ 					break;
+ 				}
+-			} else if (conn->negotiation_verb == DO) {
+-				switch (c) {
+-#if ENABLE_FEATURE_TELNET_TTYPE
+-				case TELOPT_TTYPE: /* Local option: we send terminal type */
+-					log1("TTYPE:'%s' %ssetting CHANGED_TTYPE", G.ttype, G.ttype ? "" : "not ");
+-					if (G.ttype)
+-						G.changes_seen |= CHANGED_TTYPE;
+-					break;
+-#endif
+-#if ENABLE_FEATURE_TELNET_AUTOLOGIN
+-				case TELOPT_NEW_ENVIRON: /* Local option: we send username */
+-					if (G.autologin)
+-						G.changes_seen |= CHANGED_NEW_ENVIRON;
+-					break;
+-#endif
+-#if ENABLE_FEATURE_TELNET_WIDTH
+-				case TELOPT_NAWS: /* Local option: we send window size */
+-					if (!(G.flags & FLAGS_NAWS_ON))
+-						G.changes_seen |= CHANGED_NAWS;
+-					break;
+-#endif
+-				}
+ 			}
+ 			/* else: "DONT <something>": ignore */
+ 			SET_INPUT_STATE(conn, TS_NORMAL, c);
+@@ -909,25 +844,14 @@ static int should_poll_write_fd_stdout(void *this)
+ static int write_to_stdout(void *this)
+ {
+ 	net_to_stdout_t *conn = this;
+-	int wr = MIN(BUFSIZE - conn->wridx, conn->size);
++	int wr = conn->size;
+ 	ssize_t count;
+ 
+-	dbg("write_to_stdout: wr:%d %s", wr, bin_to_hex(BUF_NET2TTY + conn->wridx, wr));
+ 	count = safe_write(conn->write_fd, BUF_NET2TTY + conn->wridx, wr);
+-	if (count <= 0) {
+-		if (count < 0 && errno == EAGAIN)
+-			return 0;
+-		//full_write1_str("Error writing to stdout\r\n");
+-		ioloop_remove_conn(conn->io, (connection_t*)conn);
+-		return -1; /* "I'm gone" */
+-	}
+-
+ 	conn->wridx = (conn->wridx + count) & BUFMASK;
+ 	conn->size -= count;
+-	if (conn->size == 0) {
+-		conn->rdidx = 0;
+-		conn->wridx = 0;
+-	}
++	conn->rdidx = 0;
++	conn->wridx = 0;
+ 	return count;
+ }
+ 
+@@ -964,12 +888,7 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
+ 	if (*argv) // extra params??
+ 		bb_show_usage();
+ 
+-	// Save our termios
+-	if (tcgetattr(0, &G.termios_def) >= 0) {
+-		G.flags |= DO_TERMIOS;
+-		G.termios_raw = G.termios_def;
+-		cfmakeraw(&G.termios_raw);
+-	}
++
+ 
+ 	xmove_fd(create_and_connect_stream_or_die(host, port), netfd);
+ 	printf("Connected to %s\n", host);
+@@ -1020,18 +939,7 @@ int telnet_main(int argc UNUSED_PARAM, char **argv)
+ 	// EINTR flag and looping is only needed to handle ^C
+ 	// in line mode, otherwise just a call to ioloop_run() would do.
+ 	// TODO: replace primitive line mode with read_line_input()!!!
+-	G.io.flags |= IOLOOP_FLAG_EXIT_IF_EINTR;
+-	for (;;) {
+-		int rc = ioloop_run(&G.io);
+-		if (rc == IOLOOP_NO_CONNS) {
+-			dbg("connection is closed");
+-			break;
+-		}
+-		if (bb_got_signal /*&& rc == IOLOOP_EINTR*/) {
+-			bb_got_signal = 0;
+-			show_menu();
+-		}
+-	}
++	ioloop_run(&G.io);
+ 
+ 	doexit(EXIT_SUCCESS);
+ }
+diff --git a/networking/telnetd.c b/networking/telnetd.c
+index eca4e51..f7214dd 100644
+--- a/networking/telnetd.c
++++ b/networking/telnetd.c
+@@ -188,27 +188,9 @@ struct globals {
+ static NOINLINE void fabricate_ctrl_D_on_pty(int fd)
+ {
+ 	struct termios tio;
+-	// Master pty can see slave's termios - abuse that
+-	if (tcgetattr(fd, &tio) != 0) {
+-		dbg_close("%s: no termios(%d)", __func__, fd);
+-		return;
+-	}
+-	dbg_close("%s: termios(%d) ICANON:%d,VEOF:%02x", __func__,
+-		fd, !!(tio.c_lflag & ICANON), (uint8_t)tio.c_cc[VEOF]);
+-	if ((tio.c_lflag & ICANON) && tio.c_cc[VEOF] != 0) {
+-		// _Should_ look like EOF on input on the slave side...
+-		write(fd, &tio.c_cc[VEOF], 1); // usually ^D
+-		// One ^D often won't do. If a program was blocked on read already,
+-		// ^D makes _that_ read return:
+-		//  read(0, "some data", 64) = 9
+-		// but the program will likely read more
+-		// (it did not interpret above as EOF), block, and die:
+-		//  read(0, 0x123456, 64) = ...<blocked>... -1 EIO
+-		//  +++ killed by SIGHUP +++
+-		// Well, I'm not greedy...
+-		write(fd, &tio.c_cc[VEOF], 1); // here is another EOF for you
+-		// If this doesn't work, they can see 0x04 bytes. Tough cookies
+-	}
++	tcgetattr(fd, &tio);
++	write(fd, &tio.c_cc[VEOF], 1);
++	write(fd, &tio.c_cc[VEOF], 1);
+ }
+ 
+ #define TELNET_CONNECTION \
+@@ -301,9 +283,9 @@ static void ALWAYS_INLINE remove_and_free_to_net(pty_to_net_t *ts)
+ static unsigned char read_byte_unescaping_IAC(int *iac_cnt, unsigned char **pp)
+ {
+ 	unsigned char c = *(*pp)++;
+-	if (c == IAC && **pp == IAC) {
++	if (c == IAC) {
+ 		(*iac_cnt)++;
+-		(*pp)++;  /* Skip the second IAC in IAC IAC sequence */
++		(*pp)++;
+ 	}
+ 	return c;
+ }
+@@ -349,26 +331,7 @@ static int net_to_pty__should_poll_write_fd(void *this)
+ 	/* size is >= 2 and buf[0] is IAC */
+ 	//dbg_iac("size:%d %02x %02x", size, buf[0], buf[1]);
+ 
+-	/* Cannot process IACs which wrap around buffer's end.
+-	 * Worst case: IAC SB NAWS with all bytes IAC-escaped = 13 bytes */
+-	while (ts->wridx > TO_PTY_BUFSIZE - 14) {
+-		uint64_t v64;
+-		if (ts->wridx < ts->rdidx) {
+-			/* |.......WRxRD.| */
+-			/* Buffer is not wrapped */
+-			break;
+-		}
+-		/* Possible situations: */
+-		/* |xRD.......WRx| wrapped */
+-		/* |xxxxxxxxRDWRx| wrapped and full! rdidx = wridx */
+-		/* Rotate entire buffer 8 bytes back */
+-		v64 = *(uint64_t*)BUF2PTY(ts);
+-		memmove(BUF2PTY(ts), BUF2PTY(ts) + 8, TO_PTY_BUFSIZE - 8);
+-		*(uint64_t*)(BUF2PTY(ts) + TO_PTY_BUFSIZE - 8) = v64;
+-		ts->wridx -= 8; /* can't underflow */
+-		buf -= 8;
+-		BUF2PTY_DEC(ts->rdidx, 8); /* can underflow, use DEC() */
+-	}
++
+ 
+ 	if (buf[1] == IAC) /* IAC-IAC: we have something to write */
+ 		return size;
+@@ -388,7 +351,7 @@ static int net_to_pty__should_poll_write_fd(void *this)
+ 		 * IAC EL  (248) Erase line. The receiver should delete everything up to last newline.
+ 		 * IAC GA  (249) Go ahead. For half-duplex lines: "now you talk".
+ 		 */
+-		if (buf[1] == AYT && ts->sibling) /* notify other pipe that AYT was seen */
++		if (buf[1] == AYT)
+ 			ts->sibling->respond_to_AYT = 1;
+ 		/* NOP (241). Ignore (putty keepalive, etc) */
+ 		/* All other 2-byte commands also treated as NOPs here */
+@@ -432,9 +395,8 @@ static int net_to_pty__should_poll_write_fd(void *this)
+ 			s.ws.ws_col = (byte45 << 8) | byte67;
+ 			s.ws.ws_row = (byte89 << 8) | read_byte_unescaping_IAC(&s.iac_cnt, &p); // fetches _at most_ byte#11 (if four IACs)
+ 
+-			if (s.ws.ws_col != 0 && s.ws.ws_row != 0) // don't provoke bugs elsewhere with "zero-sized screen"
++			if (s.ws.ws_col != 0 && s.ws.ws_row != 0)
+ 				ioctl(ts->write_fd, TIOCSWINSZ, (char *)&s.ws);
+-			log1("pfd:%d window size:%dx%d", ts->write_fd, s.ws.ws_row, s.ws.ws_col);
+ 			increment = p - buf;
+ 			goto inc;
+ 			// trailing IAC,SE will be eaten separately, as 2-byte NOP
+@@ -461,52 +423,23 @@ static int net_to_pty__write(void *this)
+ 	unsigned char *buf;
+ 	unsigned char *found;
+ 
+-	if (ts->write_fd < 0) /* did slave close its pty? */
+-		return 0;
+-
+ 	buf = BUF2PTY(ts) + ts->wridx;
+-	wr = MIN(TO_PTY_BUFSIZE - ts->wridx, ts->size);
+-	/* wr is at least 1 here */
++	wr = ts->size;
+ 
+ 	found = memchr(buf, IAC, wr);
+ 	if (found == buf) {
+-		/* The first char is IAC.
+-		 * should_poll_write_fd() ensures we are only called this way
+-		 * if there are two IACs.
+-		 * It also ensures the buffer is not wrapping within 7 chars.
+-		 * Write one IAC. If that works, skip both.
+-		 */
+-//TODO: advance ptr by one, and memchr up to _next_ IAC (if any):
+-//this would write more data
+-		rc = safe_write(ts->write_fd, buf, 1);
+-		if (rc > 0) {
+-			//dbg_iac("wrote: IAC");
+-			ts->wridx += 2; /* this can't overflow */
+-			ts->size -= 2;
+-		}
+-		/* Leave it to pty2net side to deal with closing pty on errors
+-		 * (it'll see them when it tries to read pty).
+-		 */
+-		return 0; /* "didn't write anything" */
++		safe_write(ts->write_fd, buf, 1);
++		ts->wridx += 2;
++		ts->size -= 2;
++		return 0;
+ 	}
+-	/* No leading IACs: found != buf.
+-	 * IOW: there is a "prefix" of non-IAC chars.
+-	 * Write only them, and return.
+-	 */
+ 	if (found)
+ 		wr = found - buf;
+ 
+-	/* We map \r\n ==> \r for pragmatic reasons:
+-	 * many client implementations send \r\n when
+-	 * the user hits the CarriageReturn key.
+-	 * See RFC 1123 3.3.1 Telnet End-of-Line Convention.
+-	 */
+ 	found = memchr(buf, '\r', wr);
+ 	if (found)
+-		wr = found - buf + 1; /* write up to and including \r */
++		wr = found - buf + 1;
+ 	rc = safe_write(ts->write_fd, buf, wr);
+-	if (rc <= 0)
+-		return 0; /* "didn't write anything" */
+ 	//dbg_iac("wrote: %s", bin_to_hex(buf, rc));
+ 	/* check is needed: imagine that write was _short_ */
+ 	if (buf[rc - 1] == '\r') /* last written byte was CR? */
+@@ -530,54 +463,20 @@ static int net_to_pty__should_poll_read_fd(void *this)
+ 	net_to_pty_t *ts = this;
+ 
+ 	/* the sibling may have closed our ptyfd after getting 10 EIO's */
+-	if (ts->write_fd < 0
+-	 || ts->shell_pid < 0 /* -K option, and our pty's pid has exited */
+-	) {
+-		if (ts->sibling) {
+-			/* do not close our netfd, it's in use by sibling */
+-			ts->read_fd = -1;
+-		}
+-		dbg_close("%s:%d: remove_and_free_to_pty:%p wr:%d pid:%d",
+-				__func__, __LINE__, ts, ts->write_fd, ts->shell_pid);
++	if (ts->write_fd < 0) {
++		ts->read_fd = -1;
+ 		remove_and_free_to_pty(ts);
+-		return -1; /* "don't use me anymore, I'm gone" */
++		return -1;
+ 	}
+ 
+-	if (ts->read_fd < 0) { /* we've seen EOF/error on netfd */
+-		dbg_close("EOF on netfd was seen, ts->size:%d", ts->size);
+-		if (ts->size == 0) { /* we wrote everything */
+-			unsigned rem;
+-			/* close ptyfd, but after a 20 ms pause */
+-
+-			/* pty has a design problem: close(master_ptyfd)
+-			 * is defined as causing hangup on slave pty.
+-			 * Which discards all currently buffered unread data
+-			 * (in our case, all data we just wrote).
+-			 * usleep(20000) is a crude solution.
+-			 * A better one (does not block other conns):
+-			 */
+-			dbg_close("going to close ptyfd:%d deadline_us:%u",
+-					ts->write_fd, ts->deadline_us);
+-			if (!ts->deadline_us) {
+-				fabricate_ctrl_D_on_pty(ts->write_fd);
+-				ts->deadline_us = (monotonic_us() + 20000) | 1;
+-				rem = 20000;
+-			} else {
+-				rem = ts->deadline_us - monotonic_us();
+-			}
+-			dbg_close("until ptyfd_close:%d", rem);
+-			if (rem <= 20000) {
+-				ioloop_decrease_current_timeout(ts->io, rem);
+-				return 0; /* "do not read" */
+-			}
+-			/* rem undeflowed (is "negative"): we waited at least 1000us */
+-			dbg_close("EOF on netfd, closing ptyfd:%d", ts->write_fd);
+-			if (ts->sibling)
+-				ts->sibling->read_fd = -1;
+-			remove_and_free_to_pty(ts); /* closes ts->write_fd (ptyfd) */
+-			return -1; /* "don't use me anymore, I'm gone" */
++	if (ts->read_fd < 0) {
++		if (ts->size == 0) {
++			fabricate_ctrl_D_on_pty(ts->write_fd);
++			ts->sibling->read_fd = -1;
++			remove_and_free_to_pty(ts);
++			return -1;
+ 		}
+-		return 0; /* "don't want to read" */
++		return 0;
+ 	}
+ 
+ 	return ts->size < TO_PTY_BUFSIZE;
+@@ -597,17 +496,12 @@ static int net_to_pty__read(void *this)
+ 	// ioloop logic ensures this is false
+ 
+ 	/* Read into contiguous segment from rdidx */
+-	count = MIN(TO_PTY_BUFSIZE - ts->rdidx, avail);
++	(void)avail;
++	count = TO_PTY_BUFSIZE - ts->rdidx;
+ 	count = safe_read(ts->read_fd, BUF2PTY(ts) + ts->rdidx, count);
+ 	if (count <= 0) {
+-		dbg_close("EOF/error on netfd:%d sibling:%p", ts->read_fd, ts->sibling);
+-		/* There is no way to signal to pty that input is in "error state",
+-		 * therefore treat both EOF and error the same.
+-		 */
+-		if (!ts->sibling)
+-			close(ts->read_fd); /* close netfd if not in use by sibling */
+ 		ts->read_fd = -1;
+-		return 0; /* "didn't read anything" */
++		return 0;
+ 	}
+ 
+ 	ts->size += count;
+@@ -631,93 +525,28 @@ static net_to_pty_t *new_net_to_pty(int from, int to)
+ 
+ static int pty_to_net__should_poll_read_fd(void *this)
+ {
+-	//connection_t *conn = this;
+ 	pty_to_net_t *ts = this;
+ 
+-	if (ts->read_fd < 0 /* we saw fatal read error before */
+-	 || ts->shell_pid < 0 /* -K option, and our pty's pid has exited */
+-	) {
+-		if (ts->size == 0) { /* output flushed? */
+-			remove_and_free_to_net(ts);
+-			return -1; /* "don't use me anymore, I'm gone" */
+-		}
+-		return 0; /* "don't read" */
+-	}
+-	if (ts->eio_count != 0) {
+-		unsigned rem;
+-
+-		//if (ts->eio_count >= 10)
+-		//	return 0; /* "do not read" */
+-		//^^^ can't reach, caught by "ts->read_fd < 0" above.
+-
+-		/* last read was EIO. Still waiting before retry? */
+-		rem = ts->deadline_us - monotonic_us();
+-		if (rem <= 1000) {
+-			/* tell io loop that poll timeout should now be "rem" us, not infinity */
+-			ioloop_decrease_current_timeout(ts->io, rem);
+-			return 0; /* "do not read me (yet)" */
+-		}
+-		/* else: rem underflowed: 1000us passed, can try reading again */
++	if (ts->read_fd < 0) {
++		remove_and_free_to_net(ts);
++		return -1;
+ 	}
+ 	return ts->size < TO_NET_BUFSIZE;
+ }
+ 
+-/* Read from pty to buffer, handling vhangup() EIO retries */
+ static int pty_to_net__read(void *this)
+ {
+-	//connection_t *conn = this;
+ 	pty_to_net_t *ts = this;
+ 	ssize_t count;
+-	int avail;
+ 
+-	/* Calculate available space and contiguous segment */
+-	avail = TO_NET_BUFSIZE - ts->size;
+-	//if (avail <= 0)
+-	//	return 0; /* buffer full */
+-	// io loop logic ensures this is false
+-
+-	/* Read into contiguous segment from rdidx */
+-	count = MIN(TO_NET_BUFSIZE - ts->rdidx, avail);
++	count = TO_NET_BUFSIZE - ts->rdidx;
+ 	count = safe_read(ts->read_fd, BUF2NET(ts) + ts->rdidx, count);
+ 	if (count <= 0) {
+-		if (count < 0) {
+-			if (errno == EAGAIN)
+-				return 0;
+-			/* login process might call vhangup(),
+-			 * which causes intermittent EIOs on read above
+-			 * (observed on kernel 4.12.0, not seen on 5.18.0).
+-			 * Try up to 10*1000 us.
+-			 */
+-			if (errno == EIO) {
+-				ts->eio_count++;
+-				dbg_close("EIO ptyfd:%d ts->eio_count:%d %06u",
+-						ts->read_fd, ts->eio_count,
+-						(unsigned)(monotonic_us() % 1000000)
+-				);
+-				if (ts->eio_count >= 10)
+-					goto close_ptyfd;
+-				ts->deadline_us = monotonic_us() + 1000;
+-				return 0; /* "read nothing" */
+-			}
+-			dbg_close("error on ptyfd:%d %m", ts->read_fd);
+-			/* (what other read errors from pty are possible, apart from EIO?) */
+-			ts->eio_count = 10; /* "fatally bad error" */
+-			goto close_ptyfd;
+-		}
+-		/* EOF. (Doesn't happen with master ptys on Linux when slave closes - always EIO instead?) */
+-		dbg_close("EOF on ptyfd:%d", ts->read_fd);
+-		ts->eio_count = 0;
+- close_ptyfd:
+-		dbg_close("closing ptyfd:%d", ts->read_fd);
+ 		close(ts->read_fd);
+-		if (ts->sibling)
+-			/* net2pty pipe needs to close (nowhere to write its data) */
+-			ts->sibling->write_fd = -1;
++		ts->sibling->write_fd = -1;
+ 		ts->read_fd = -1;
+-		/* Returning -1 here would mean "do not try writing to net", which is wrong */
+-		return 0; /* EOF or error, but we do not prevent draining to net */
++		return 0;
+ 	}
+-	ts->eio_count = 0;
+ 
+ 	ts->size += count;
+ 	BUF2NET_INC(ts->rdidx, count);
+@@ -728,21 +557,9 @@ static int pty_to_net__read(void *this)
+ static int pty_to_net__should_poll_write_fd(void *this)
+ {
+ 	pty_to_net_t *ts = this;
+-	if (ts->size == 0) {
+-		/* Wrote everything and pty is dead? */
+-		if (ts->read_fd < 0) {
+-			dbg_close("%s:%d: remove_and_free_to_net:%p rd:%d eio_count:%d",
+-					__func__, __LINE__, ts, ts->read_fd, ts->eio_count);
+-			if (ts->sibling)
+-				ts->write_fd = -1;
+-			remove_and_free_to_net(ts);
+-			return -1; /* "I'm gone" */
+-		}
+-	}
+-	return ts->size > 0 || ts->respond_to_AYT || ts->extra_byte_to_write;
++	return ts->size > 0 || ts->respond_to_AYT;
+ }
+ 
+-/* Write to socket from buffer, escaping IAC bytes */
+ static int pty_to_net__write(void *this)
+ {
+ 	pty_to_net_t *ts = this;
+@@ -751,82 +568,34 @@ static int pty_to_net__write(void *this)
+ 	unsigned char *iac_ptr;
+ 	size_t wr;
+ 
+-	/* Did we fail to send a byte last time? */
+-	if (ts->extra_byte_to_write) {
+-		count = safe_write(ts->write_fd, &ts->extra_byte_to_write, 1);
+-		if (count == 1)
+-			ts->extra_byte_to_write = 0;
+-		goto ret;
+-	}
+-
+ 	if (ts->size == 0) {
+-		if (ts->respond_to_AYT) { /* other side pinged us? */
+-			/* Send back evidence that AYT was seen: IAC NOP */
+-			static const char ayt_response[2] = { IAC, NOP };
+-			count = safe_write(ts->write_fd, ayt_response, 2);
+-			if (count >= 1) {
+-				if (count == 1) /* goddamit */
+-					ts->extra_byte_to_write = NOP;
+-				ts->respond_to_AYT = 0;
+-			}
+-			goto ret;
+-		}
+-		return 0;
++		static const char ayt_response[2] = { IAC, NOP };
++		count = safe_write(ts->write_fd, ayt_response, 2);
++		ts->respond_to_AYT = 0;
++		return count;
+ 	}
+ 
+ 	buf = BUF2NET(ts) + ts->wridx;
+-	wr = MIN(TO_NET_BUFSIZE - ts->wridx, ts->size);
+-	dbg("rem:%d sz:%d ch:0x%02x", TO_NET_BUFSIZE - ts->wridx, ts->size, *buf);
++	wr = ts->size;
+ 
+ 	if (*buf == IAC) {
+ 		static const char IACIAC[2] ALIGN1 = { IAC, IAC };
+-		count = safe_write(ts->write_fd, IACIAC, 2);
+-		if (count <= 1) {
+-			if (count < 1) /* wrote nothing? */
+-				goto ret;
+-			/* Wrote only one byte of two. Amazing... */
+-			ts->extra_byte_to_write = IAC;
+-		}
+-		/* Consume one byte from buffer */
++		safe_write(ts->write_fd, IACIAC, 2);
+ 		count = 1;
+ 	} else {
+-		/* Find next IAC or write up to end of segment */
+ 		iac_ptr = memchr(buf, IAC, wr);
+ 		if (iac_ptr)
+ 			wr = iac_ptr - buf;
+ 		count = safe_write(ts->write_fd, buf, wr);
+-		if (count <= 0)
+-			goto ret;
+ 	}
+ 
+ 	BUF2NET_INC(ts->wridx, count);
+ 	ts->size -= count;
+-	if (ts->size == 0) { /* very typical */
+-		/* Avoid buffer wrapping most of the time (-> have bigger writes) */
+-		//dbg_buffer("zero size");
++	if (ts->size == 0) {
+ 		ts->rdidx = 0;
+ 		ts->wridx = 0;
+ 	}
+- ret:
+-	if (count >= 0)
+-		return count; /* "not error" */
+-	if (errno == EAGAIN)
+-		return 0; /* "not error" */
+-
+-	/* Assuming fatal write error */
+-	/* If peer closes its read side with
+-	 * shutdown(SHUT_RD), we'll see EPIPE
+-	 * or ECONNRESET.
+-	 * (both were seen to occur in practice)
+-	 */
+-	if (ts->sibling) {
+-		/* Sibling exists, don't close yet */
+-		ts->read_fd = -1;
+-		ts->write_fd = -1;
+-	}
+-	dbg_close("%s:%d: remove_and_free_to_net:%p", __func__, __LINE__, ts);
+-	remove_and_free_to_net(ts);
+-	return -1; /* "I'm gone" */
++	return count;
+ }
+ 
+ static pty_to_net_t *new_pty_to_net(int from, int to)
+@@ -852,11 +621,13 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+ 	const int sockwr = sockrd != 0 ? sockrd : 1;
+ 	const char *login_argv[2];
+ 	struct termios termbuf;
+-	int ptyfd, pid;
++	int ptyfd, slave_fd, pid;
+ 	char tty_name[GETPTY_BUFSIZE];
+ 
+ 	/* Got a new connection, set up a pty */
+ 	ptyfd = xgetpty(tty_name);
++	slave_fd = xopen(tty_name, O_RDWR);
++	close(atoi(tty_name + 8));
+ 	ndelay_on(ptyfd);
+ 	close_on_exec_on(ptyfd);
+ 
+@@ -893,17 +664,12 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+ 
+ 	fflush_all();
+ 	pid = vfork(); /* NOMMU-friendly */
+-	if (pid < 0) {
+-		close(ptyfd);
+-		close(sockrd);
+-		bb_simple_perror_msg("vfork");
+-		return;
+-	}
+ 	if (pid > 0) {
+ 		/* Parent */
+ 		pty_to_net_t *to_net;
+ 		net_to_pty_t *to_pty;
+ 
++		close(slave_fd);
+ 		to_net = new_pty_to_net(ptyfd, sockwr);
+ 		to_pty = new_net_to_pty(sockrd, ptyfd);
+ 		dbg("to_net:%p to_pty:%p", to_net, to_pty);
+@@ -929,8 +695,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+ 	/* Open the child's side of the pty */
+ 	/* NB: setsid() disconnects from any previous ctty's. Therefore
+ 	 * we must open child's side of the tty AFTER setsid! */
+-	close(0);
+-	xopen(tty_name, O_RDWR); /* fd 0: becomes our ctty */
++	xmove_fd(slave_fd, 0);
+ 	xdup2(0, 1);
+ 	xdup2(0, 2);
+ 	tcsetpgrp(0, pid); /* switch this tty's process group to us */
+@@ -975,7 +740,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+ 	BB_EXECVP(G.loginpath, (char **)login_argv);
+ 	/* _exit is safer with vfork, and we shouldn't send message
+ 	 * to remote clients anyway */
+-	_exit_FAILURE(); /*bb_perror_msg_and_die("execv %s", G.loginpath);*/
++	_exit(EXIT_FAILURE); /*bb_perror_msg_and_die("execv %s", G.loginpath);*/
+ }
+ 
+ 
+@@ -994,15 +759,11 @@ static int accept_conn__accept(void *this)
+ 	struct accept_conn *ts = this;
+ 	int fd;
+ 
+-	dbg("%s:%d", __func__, __LINE__);
+ 	fd = accept(ts->read_fd, NULL, NULL);
+-//TODO: accept4(SOCK_NONBLOCK) - can remove ndelay_on() in make_new_session
+-	if (fd >= 0) {
+-		close_on_exec_on(fd);
+-		/* Create two new pipes and insert them into ioloop */
+-		make_new_session(ts->io, fd);
+-	}
+-	return 0;
++	close_on_exec_on(fd);
++	make_new_session(ts->io, fd);
++	conn_close_fds_remove_and_free((void *)ts);
++	return -1;
+ }
+ 
+ static int accept_conn__return_zero(void *this UNUSED_PARAM)
+@@ -1027,24 +788,8 @@ static void handle_sigchld(int sig UNUSED_PARAM)
+ {
+ 	int save_errno = errno;
+ 
+-	/* Looping: more than one child may have exited */
+-	while (1) {
+-		pid_t pid;
+-		struct telnet_conn *conn;
+-
+-		pid = wait_any_nohang(NULL);
+-		if (pid <= 0)
+-			break;
+-		update_utmp_DEAD_PROCESS(pid);
+-		conn = (void*)G.io.conns;
+-		while (conn) {
+-			if (conn->shell_pid == pid) {
+-				/* mark the conn to close soon */
+-				conn->shell_pid = -1;
+-			}
+-			conn = (void*)conn->next;
+-		}
+-	}
++	while (safe_waitpid(-1, NULL, WNOHANG) > 0)
++		continue;
+ 
+ 	errno = save_errno;
+ }
+@@ -1691,7 +1436,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+ 		}
+ 	}
+ 	/* Redirect log to syslog early, if needed */
+-	if (IS_INETD || (opt & OPT_SYSLOG) || !(opt & OPT_FOREGROUND)) {
++	if (IS_INETD) {
+ 		openlog(applet_name, LOG_PID, LOG_DAEMON);
+ 		logmode = LOGMODE_SYSLOG;
+ 	}
+@@ -1701,18 +1446,13 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+ 	}
+ #if ENABLE_FEATURE_TELNETD_STANDALONE
+ 	else {
+-		int master_fd = 0;
+-		/* For -w SEC, listening socket is 0. Otherwise: */
+-		if (!(opt & OPT_WAIT)) {
+-			unsigned portnbr = CONFIG_FEATURE_TELNETD_PORT_DEFAULT;
+-			if (opt & OPT_PORT)
+-				portnbr = xatou16(opt_portnbr);
+-			/* If someone would run "telnetd 0>&-", we can get terribly confused. */
+-			/* Nake sure master_fd, or accept() result fd, etc, cant become 0 or 1: */
+-			bb_sanitize_stdio();
+-			master_fd = create_and_bind_stream_or_die(opt_bindaddr, portnbr);
+-			xlisten(master_fd, 1);
+-		}
++		int master_fd;
++		unsigned portnbr = CONFIG_FEATURE_TELNETD_PORT_DEFAULT;
++		if (opt & OPT_PORT)
++			portnbr = xatou16(opt_portnbr);
++		bb_sanitize_stdio();
++		master_fd = create_and_bind_stream_or_die(opt_bindaddr, portnbr);
++		xlisten(master_fd, 1);
+ 		close_on_exec_on(master_fd);
+ 		ioloop_insert_conn(&G.io, (void *)new_accept_conn(master_fd));
+ 	}
+@@ -1730,25 +1470,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+ 		G.io.max_timeout = (UINT_MAX / 1000000);
+ 	G.io.max_timeout *= 1000000;
+ #endif
+-	G.io.flags |= IOLOOP_FLAG_EXIT_IF_TIMEOUT;
+-	for (;;) {
+-		int rc = ioloop_run(&G.io);
+-		if (rc == IOLOOP_NO_CONNS) {
+-			/* inetd mode (not -w), and it's closed now */
+-			dbg_close("connection is closed");
+-			break;
+-		}
+-		/* else: timeout */
+-#if ENABLE_FEATURE_TELNETD_INETD_WAIT
+-		if (1 /* rc == IOLOOP_TIMEOUT */
+-		 && (!G.io.conns || !G.io.conns->next) /* only accept conn exists */
+-		) {
+-			dbg_close("-w TIMEOUT:%dus", G.io.max_timeout);
+-			break;
+-		}
+-#endif
+-		dbg("timeout was due to temporary EIO: continue looping");
+-	}
++	ioloop_run(&G.io);
+ 	dbg_close("terminating");
+ 	return EXIT_SUCCESS;
+ }
+diff --git a/networking/wget.c b/networking/wget.c
+index ab41213..de0e259 100644
+--- a/networking/wget.c
++++ b/networking/wget.c
+@@ -344,8 +344,6 @@ static void progress_meter(int flag)
+ 
+ 	if (flag == PROGRESS_END) {
+ 		bb_progress_free(&G.pmt);
+-		if (notty == 0)
+-			bb_putchar_stderr('\n'); /* it's tty */
+ 	}
+ }
+ #else
+@@ -403,9 +401,7 @@ static char *base64enc(const char *str)
+ #if ENABLE_FEATURE_WGET_TIMEOUT
+ static void alarm_handler(int sig UNUSED_PARAM)
+ {
+-	/* This is theoretically unsafe (uses stdio and malloc in signal handler) */
+-	if (G.die_if_timed_out)
+-		bb_simple_error_msg_and_die("download timed out");
++	bb_simple_error_msg_and_die("download timed out");
+ }
+ static void set_alarm(void)
+ {
+@@ -453,8 +449,6 @@ static FILE *open_socket(len_and_sockaddr *lsa)
+ 	/* glibc 2.4 seems to try seeking on it - ??! */
+ 	/* hopefully it understands what ESPIPE means... */
+ 	fp = fdopen(fd, "r+");
+-	if (!fp)
+-		bb_die_memory_exhausted();
+ 
+ 	return fp;
+ }
+@@ -594,9 +588,7 @@ static void parse_url(const char *src_url, struct host_info *h)
+ 	//   saves: 'index.html' (we save 'test')
+ 	//
+ 	// We also don't add unique .N suffix if file exists...
+-	sp = strchr(h->host, '/');
+-	p = strchr(h->host, '?'); if (!sp || (p && sp > p)) sp = p;
+-	p = strchr(h->host, '#'); if (!sp || (p && sp > p)) sp = p;
++	sp = strpbrk(h->host, "/?#");
+ 	if (!sp) {
+ 		h->path = "";
+ 	} else if (*sp == '/') {
+@@ -663,11 +655,7 @@ static char *get_sanitized_hdr(FILE *fp)
+ 	*s++ = '\0';
+ 	hdrval = skip_whitespace(s);
+ 
+-	if (c != '\n') {
+-		/* Rats! The buffer isn't big enough to hold the entire header value */
+-		while (c = getc(fp), c != EOF && c != '\n')
+-			continue;
+-	}
++	(void)c;
+ 
+ 	return hdrval;
+ }
+@@ -956,32 +944,12 @@ static int NOINLINE retrieve_file_data(FILE *dfp)
+ 	/* Loops only if chunked */
+ 	while (1) {
+ 
+-#if ENABLE_FEATURE_WGET_STATUSBAR || ENABLE_FEATURE_WGET_TIMEOUT
+-		/* Must use nonblocking I/O, otherwise fread will loop
+-		 * and *block* until it reads full buffer,
+-		 * which messes up progress bar and/or timeout logic.
+-		 * Because of nonblocking I/O, we need to dance
+-		 * very carefully around EAGAIN. See explanation at
+-		 * clearerr() calls.
+-		 */
+-		ndelay_on(polldata.fd);
+-#endif
++		(void)second_cnt;
++		(void)polldata;
+ 		while (1) {
+ 			int n;
+ 			unsigned rdsz;
+ 
+-#if ENABLE_FEATURE_WGET_STATUSBAR || ENABLE_FEATURE_WGET_TIMEOUT
+-			/* fread internally uses read loop, which in our case
+-			 * is usually exited when we get EAGAIN.
+-			 * In this case, libc sets error marker on the stream.
+-			 * Need to clear it before next fread to avoid possible
+-			 * rare false positive ferror below. Rare because usually
+-			 * fread gets more than zero bytes, and we don't fall
+-			 * into if (n <= 0) ...
+-			 */
+-			clearerr(dfp);
+-#endif
+-			errno = 0;
+ 			rdsz = sizeof(G.wget_buf);
+ 			if (G.got_clen) {
+ 				if (G.content_len < (off_t)sizeof(G.wget_buf)) {
+@@ -991,66 +959,17 @@ static int NOINLINE retrieve_file_data(FILE *dfp)
+ 				}
+ 			}
+ 			n = fread(G.wget_buf, 1, rdsz, dfp);
+-
+-			if (n > 0) {
+-				xwrite(G.output_fd, G.wget_buf, n);
+-				G.transferred += n;
+-				if (G.got_clen) {
+-					G.content_len -= n;
+-					if (G.content_len == 0)
+-						break;
+-				}
+-#if ENABLE_FEATURE_WGET_TIMEOUT
+-				second_cnt = G.timeout_seconds;
+-#endif
+-				goto bump;
+-			}
+-
+-			/* n <= 0.
+-			 * man fread:
+-			 * If error occurs, or EOF is reached, the return value
+-			 * is a short item count (or zero).
+-			 * fread does not distinguish between EOF and error.
+-			 */
+-			if (errno != EAGAIN) {
+-				progress_meter(PROGRESS_END);
+-				if (ferror(dfp)) {
+-					bb_simple_perror_msg(bb_msg_read_error);
+-				}
+-				G.content_len = 1; /* treat end as error, not EOF */
+-				goto EOF_err; /* EOF / error */
+-			}
+-
+-#if ENABLE_FEATURE_WGET_STATUSBAR || ENABLE_FEATURE_WGET_TIMEOUT
+-			/* It was EAGAIN. There is no data. Wait up to one second
+-			 * then abort if timed out, or update the bar and try reading again.
+-			 */
+-			if (safe_poll(&polldata, 1, 1000) == 0) {
+-# if ENABLE_FEATURE_WGET_TIMEOUT
+-				if (second_cnt != 0 && --second_cnt == 0) {
+-					progress_meter(PROGRESS_END);
+-					bb_simple_error_msg("download timed out");
+-					G.content_len = 1; /* treat end as error, not EOF */
+-					goto EOF_err;
+-				}
+-# endif
+-				/* We used to loop back to poll here,
+-				 * but there is no great harm in letting fread
+-				 * to try reading anyway.
+-				 */
++			if (n <= 0)
++				break;
++			xwrite(G.output_fd, G.wget_buf, n);
++			G.transferred += n;
++			if (G.got_clen) {
++				G.content_len -= n;
++				if (G.content_len == 0)
++					break;
+ 			}
+-#endif
+- bump:
+-			/* Need to do it _every_ second for "stalled" indicator
+-			 * to be shown properly.
+-			 */
+ 			progress_meter(PROGRESS_BUMP);
+-		} /* while (reading data) */
+-
+-#if ENABLE_FEATURE_WGET_STATUSBAR || ENABLE_FEATURE_WGET_TIMEOUT
+-		clearerr(dfp);
+-		ndelay_off(polldata.fd); /* else fgets can get very unhappy */
+-#endif
++		}
+ 		if (!G.chunked)
+ 			break;
+ 
+@@ -1083,7 +1002,6 @@ static int NOINLINE retrieve_file_data(FILE *dfp)
+ 	G.chunked = 0;  /* makes it show 100% even for chunked download */
+ 	G.got_clen = 1; /* makes it show 100% even for download of (formerly) unknown size */
+ 	progress_meter(PROGRESS_END);
+- EOF_err:
+ 	if (G.content_len != 0) {
+ 		/* GNU wget says "DATE TIME (NN MB/s) - Connection closed at byte NNN. Retrying." */
+ 		bb_error_msg("connection closed at byte %llu", (unsigned long long)G.transferred);
+@@ -1096,13 +1014,8 @@ static int NOINLINE retrieve_file_data(FILE *dfp)
+ 	 * failed to restart *without* losing the almost complete file.
+ 	 */
+ 	pos = lseek(G.output_fd, 0, SEEK_CUR);
+-	if (pos != (off_t)-1) {
+-		/* do not truncate if -O- >>FILE is in use, a user complained about
+-		 * "wget -O- 'http://host.com/empty' >>FILE" truncating FILE.
+-		 */
+-		if (!(fcntl(G.output_fd, F_GETFL) & O_APPEND))
+-			ftruncate(G.output_fd, pos);
+-	}
++	if (pos != (off_t)-1)
++		ftruncate(G.output_fd, pos);
+ 
+ 	if (!(option_mask32 & WGET_OPT_QUIET)) {
+ 		if (G.output_fd == 1)
+@@ -1136,7 +1049,7 @@ static void download_one_url(const char *url)
+ 	/* Use the proxy if necessary */
+ 	use_proxy = (strcmp(G.proxy_flag, "off") != 0);
+ 	if (use_proxy) {
+-		char *proxy = getenv(target.protocol[0] == 'f' ? "ftp_proxy" : "http_proxy");
++		char *proxy = getenv("http_proxy");
+ //FIXME: what if protocol is https? Ok to use http_proxy?
+ 		use_proxy = (proxy && proxy[0]);
+ 		if (use_proxy)
+@@ -1161,7 +1074,7 @@ static void download_one_url(const char *url)
+ 	if (!(option_mask32 & WGET_OPT_OUTNAME)) {
+ 		G.fname_out = bb_get_last_path_component_nostrip(target.path);
+ 		/* handle "wget http://kernel.org//" */
+-		if (G.fname_out[0] == '/' || !G.fname_out[0])
++		if (!G.fname_out[0])
+ 			G.fname_out = (char*)"index.html";
+ 		/* -P DIR is considered only if there was no -O FILE */
+ 		if (G.dir_prefix)
+@@ -1227,7 +1140,7 @@ static void download_one_url(const char *url)
+ # endif
+ 			sfp = fdopen(fd, "r+");
+ 			if (!sfp)
+-				bb_die_memory_exhausted();
++				xfunc_die();
+ 			goto socket_opened;
+ 		}
+ 		sfp = open_socket(lsa);
+@@ -1242,14 +1155,14 @@ static void download_one_url(const char *url)
+ 		sfp = open_socket(lsa);
+ #endif
+ 		/* Send HTTP request */
+-		if (use_proxy) {
+-			SENDFMT(sfp, "GET %s://%s/%s HTTP/1.1\r\n",
+-				target.protocol, target.host,
+-				target.path);
+-		} else {
+-			SENDFMT(sfp, "%s /%s HTTP/1.1\r\n",
+-				(option_mask32 & WGET_OPT_POST) ? "POST" : "GET",
+-				target.path);
++		{
++			const char *req_pfx = "";
++			const char *req_host = "";
++			if (use_proxy) {
++				req_pfx = "http://";
++				req_host = target.host;
++			}
++			SENDFMT(sfp, "GET %s%s/%s HTTP/1.1\r\n", req_pfx, req_host, target.path);
+ 		}
+ 		if (!USR_HEADER_HOST)
+ 			SENDFMT(sfp, "Host: %s\r\n", target.host);
+@@ -1266,7 +1179,7 @@ static void download_one_url(const char *url)
+ 			SENDFMT(sfp, "Proxy-Authorization: Basic %s\r\n"+6,
+ 				base64enc(target.user));
+ 		}
+-		if (use_proxy && server.user && !USR_HEADER_PROXY_AUTH) {
++		if (server.user) {
+ 			SENDFMT(sfp, "Proxy-Authorization: Basic %s\r\n",
+ 				base64enc(server.user));
+ 		}
+@@ -1439,7 +1352,7 @@ However, in real world it was observed that some web servers
+ 					bb_error_msg_and_die("transfer encoding '%s' is not supported", str);
+ 				G.chunked = 1;
+ 			}
+-			if (key == KEY_location && status >= 300) {
++			if (key == KEY_location) {
+ 				if (--redir_limit == 0)
+ 					bb_simple_error_msg_and_die("too many redirections");
+ 				fclose(sfp);
+@@ -1482,30 +1395,19 @@ However, in real world it was observed that some web servers
+ 
+ 	free(lsa);
+ 
+-	if (!(option_mask32 & WGET_OPT_SPIDER)) {
+-		if (G.output_fd < 0)
+-			G.output_fd = xopen(G.fname_out, G.o_flags);
+-		if (retrieve_file_data(dfp) != 0) {
+-			/* Partial download */
+-			if (G.tries == 0 || retry_cnt-- != 0) {
+-				G.beg_range += G.transferred;
+-				goto restart;
+-			}
+-			/* else: -t TRIES exceeded */
+-//FIXME: should we abort instead of continuing with next URL?
+-		}
+-		if (!(option_mask32 & WGET_OPT_OUTNAME)) {
+-			xclose(G.output_fd);
+-			G.output_fd = -1;
+-		} else { /* -O FILE receives _all_ URLs concatenated */
+-			/*
+-			 * For "wget -O FILE URL1 URL2":
+-			 * remember where URL1 data ends in FILE */
+-			G.reset_pos += G.beg_range + G.transferred;
++	if (G.output_fd < 0)
++		G.output_fd = xopen(G.fname_out, G.o_flags);
++	if (retrieve_file_data(dfp) != 0) {
++		if (G.tries == 0 || retry_cnt-- != 0) {
++			G.beg_range += G.transferred;
++			goto restart;
+ 		}
++	}
++	if (!(option_mask32 & WGET_OPT_OUTNAME)) {
++		xclose(G.output_fd);
++		G.output_fd = -1;
+ 	} else {
+-		if (!(option_mask32 & WGET_OPT_QUIET))
+-			fprintf(stderr, "remote file exists\n");
++		G.reset_pos += G.beg_range + G.transferred;
+ 	}
+ 
+ #if ENABLE_FEATURE_WGET_FTP
+diff --git a/procps/free.c b/procps/free.c
+index d0c849b..52fd47a 100644
+--- a/procps/free.c
++++ b/procps/free.c
+@@ -88,20 +88,14 @@ static NOINLINE unsigned int parse_meminfo(struct globals *g)
+ 	g->cached_kb = g->available_kb = g->reclaimable_kb = 0;
+ 	seen_cached_and_available_and_reclaimable = 3;
+ 	while (fgets(buf, sizeof(buf), fp)) {
+-		if (sscanf(buf, "Cached: %lu %*s\n", &g->cached_kb) == 1)
+-			if (--seen_cached_and_available_and_reclaimable == 0)
+-				break;
+-		if (sscanf(buf, "MemAvailable: %lu %*s\n", &g->available_kb) == 1)
+-			if (--seen_cached_and_available_and_reclaimable == 0)
+-				break;
+-		if (sscanf(buf, "SReclaimable: %lu %*s\n", &g->reclaimable_kb) == 1)
+-			if (--seen_cached_and_available_and_reclaimable == 0)
+-				break;
++		sscanf(buf, "Cached: %lu %*s\n", &g->cached_kb);
++		sscanf(buf, "MemAvailable: %lu %*s\n", &g->available_kb);
++		sscanf(buf, "SReclaimable: %lu %*s\n", &g->reclaimable_kb);
+ 	}
+ 	/* Have to close because of NOFORK */
+ 	fclose(fp);
+ 
+-	return seen_cached_and_available_and_reclaimable == 0;
++	return 1;
+ }
+ 
+ int free_main(int argc, char **argv) MAIN_EXTERNALLY_VISIBLE;
+@@ -114,7 +108,7 @@ int free_main(int argc UNUSED_PARAM, char **argv IF_NOT_DESKTOP(UNUSED_PARAM))
+ 
+ #if ENABLE_DESKTOP
+ 	G.unit = 1 << 10;
+-	if (argv[1] && argv[1][0] == '-') {
++	if (argv[1]) {
+ 		switch (argv[1][1]) {
+ 		case 'b':
+ 			G.unit = 1;
+@@ -151,7 +145,7 @@ int free_main(int argc UNUSED_PARAM, char **argv IF_NOT_DESKTOP(UNUSED_PARAM))
+ 	sysinfo(&info);
+ 	/* Extract cached and memavailable from /proc/meminfo and convert to mem_units */
+ 	seen_available = parse_meminfo(&G);
+-	G.mem_unit = (info.mem_unit ? info.mem_unit : 1); /* kernels < 2.4.x return mem_unit==0, so cope */
++	G.mem_unit = info.mem_unit;
+ 	available = ((unsigned long long) G.available_kb * 1024) / G.mem_unit;
+ 	cached = ((unsigned long long) G.cached_kb * 1024) / G.mem_unit;
+ 	cached += info.bufferram;
+@@ -172,13 +166,7 @@ int free_main(int argc UNUSED_PARAM, char **argv IF_NOT_DESKTOP(UNUSED_PARAM))
+ 	/* On kernels < 3.14, MemAvailable is not provided.
+ 	 * Show alternate, more meaningful busy/free numbers by counting
+ 	 * buffer cache as free memory. */
+-	if (!seen_available) {
+-		printf("-/+ buffers/cache: ");
+-		printf("%12s%12s%12s\n" + 4,
+-			scale(&G, info.totalram - cached_plus_free), //used
+-			scale(&G, cached_plus_free)                  //free
+-		);
+-	}
++	(void)seen_available;
+ #if BB_MMU
+ 	printf("Swap:  ");
+ 	printf("%12s%12s%12s\n",
+diff --git a/procps/kill.c b/procps/kill.c
+index d4be18d..5a5d94d 100644
+--- a/procps/kill.c
++++ b/procps/kill.c
+@@ -2,162 +2,33 @@
+ /*
+  * Mini kill/killall[5] implementation for busybox
+  *
+- * Copyright (C) 1995, 1996 by Bruce Perens <bruce@pixar.com>.
+- * Copyright (C) 1999-2004 by Erik Andersen <andersen@codepoet.org>
+- *
+  * Licensed under GPLv2 or later, see file LICENSE in this source tree.
+  */
+-//config:config KILL
+-//config:	bool "kill (3.4 kb)"
+-//config:	default y
+-//config:	help
+-//config:	The command kill sends the specified signal to the specified
+-//config:	process or process group. If no signal is specified, the TERM
+-//config:	signal is sent.
+-//config:
+-//config:config KILLALL
+-//config:	bool "killall (5.9 kb)"
+-//config:	default y
+-//config:	help
+-//config:	killall sends a signal to all processes running any of the
+-//config:	specified commands. If no signal name is specified, SIGTERM is
+-//config:	sent.
+-//config:
+-//config:config KILLALL5
+-//config:	bool "killall5 (5.6 kb)"
+-//config:	default y
+-//config:	help
+-//config:	The SystemV killall command. killall5 sends a signal
+-//config:	to all processes except kernel threads and the processes
+-//config:	in its own session, so it won't kill the shell that is running
+-//config:	the script it was called from.
+-
+-//applet:IF_KILL(    APPLET_NOFORK(kill,     kill, BB_DIR_BIN,      BB_SUID_DROP, kill))
+-//                   APPLET_NOFORK:name      main  location         suid_type     help
+-//applet:IF_KILLALL( APPLET_NOFORK(killall,  kill, BB_DIR_USR_BIN,  BB_SUID_DROP, killall))
+-//applet:IF_KILLALL5(APPLET_NOFORK(killall5, kill, BB_DIR_USR_SBIN, BB_SUID_DROP, killall5))
+-
+-//kbuild:lib-$(CONFIG_KILL) += kill.o
+-//kbuild:lib-$(CONFIG_KILLALL) += kill.o
+-//kbuild:lib-$(CONFIG_KILLALL5) += kill.o
+-
+-//usage:#define kill_trivial_usage
+-//usage:       "[-l] [-SIG] PID..."
+-//usage:#define kill_full_usage "\n\n"
+-//usage:       "Send a signal (default: TERM) to given PIDs\n"
+-//usage:     "\n	-l	List all signal names and numbers"
+-/* //usage:  "\n	-s SIG	Yet another way of specifying SIG" */
+-//usage:
+-//usage:#define kill_example_usage
+-//usage:       "$ ps | grep apache\n"
+-//usage:       "252 root     root     S [apache]\n"
+-//usage:       "263 www-data www-data S [apache]\n"
+-//usage:       "264 www-data www-data S [apache]\n"
+-//usage:       "265 www-data www-data S [apache]\n"
+-//usage:       "266 www-data www-data S [apache]\n"
+-//usage:       "267 www-data www-data S [apache]\n"
+-//usage:       "$ kill 252\n"
+-//usage:
+-//usage:#define killall_trivial_usage
+-//usage:       "[-lq] [-SIG] PROCESS_NAME..."
+-//usage:#define killall_full_usage "\n\n"
+-//usage:       "Send a signal (default: TERM) to given processes\n"
+-//usage:     "\n	-l	List all signal names and numbers"
+-/* //usage:  "\n	-s SIG	Yet another way of specifying SIG" */
+-//usage:     "\n	-q	Don't complain if no processes were killed"
+-//usage:
+-//usage:#define killall_example_usage
+-//usage:       "$ killall apache\n"
+-//usage:
+-//usage:#define killall5_trivial_usage
+-//usage:       "[-l] [-SIG] [-o PID]..."
+-//usage:#define killall5_full_usage "\n\n"
+-//usage:       "Send a signal (default: TERM) to all processes outside current session\n"
+-//usage:     "\n	-l	List all signal names and numbers"
+-//usage:     "\n	-o PID	Don't signal this PID"
+-/* //usage:  "\n	-s SIG	Yet another way of specifying SIG" */
+-
+ #include "libbb.h"
+ 
+-/* Note: kill_main is directly called from shell in order to implement
+- * kill built-in. Shell substitutes job ids with process groups first.
+- *
+- * This brings some complications:
+- *
+- * + we can't use xfunc here
+- * + we can't use bb_show_usage
+- * + applet_name can be the name of the shell
+- * (doesn't apply for killall[5], still should be careful b/c NOFORK)
+- *
+- * kill %n gets translated into kill ' -<process group>' by shell (note space!)
+- * This is needed to avoid collision with kill -9 ... syntax
+- */
+-
+-//kbuild:lib-$(CONFIG_ASH_JOB_CONTROL) += kill.o
+-//kbuild:lib-$(CONFIG_HUSH_KILL) += kill.o
+-
+-#define SH_KILL (ENABLE_ASH_JOB_CONTROL || ENABLE_HUSH_KILL)
+-/* If shells want to have "kill", for ifdefs it's like ENABLE_KILL=1 */
+-#if SH_KILL
+-# undef  ENABLE_KILL
+-# define ENABLE_KILL 1
+-#endif
+-#define KILL_APPLET_CNT (ENABLE_KILL + ENABLE_KILLALL + ENABLE_KILLALL5)
+-
+ int kill_main(int argc UNUSED_PARAM, char **argv)
+ {
+ 	char *arg;
+ 	pid_t pid;
+ 	int signo = SIGTERM, errors = 0;
+-#if ENABLE_KILL || ENABLE_KILLALL
+-	int quiet = 0;
+-#endif
+-
+-#if KILL_APPLET_CNT == 1
+-# define is_killall  ENABLE_KILLALL
+-# define is_killall5 ENABLE_KILLALL5
+-#else
+-/* How to determine who we are? find 3rd char from the end:
+- * kill, killall, killall5
+- *  ^i       ^a        ^l  - it's unique
+- * (checking from the start is complicated by /bin/kill... case) */
+ 	const char char3 = argv[0][strlen(argv[0]) - 3];
+-# define is_killall  (ENABLE_KILLALL  && char3 == 'a')
+-# define is_killall5 (ENABLE_KILLALL5 && char3 == 'l')
+-#endif
+ 
+-	/* Parse any options */
+ 	arg = *++argv;
+-
+-	if (!arg || arg[0] != '-') {
+-		goto do_it_now;
++	if (!arg) {
++		bb_simple_error_msg("you need to specify whom to kill");
++		return EXIT_FAILURE;
+ 	}
+ 
+-	/* The -l option, which prints out signal names.
+-	 * Intended usage in shell:
+-	 * echo "Died of SIG`kill -l $?`"
+-	 * We try to mimic what kill from coreutils-6.8 does */
+-	if (arg[1] == 'l' && arg[2] == '\0') {
+-		arg = *++argv;
+-		if (!arg) {
+-			/* Print the whole signal list */
+-			print_signames();
+-			return 0;
+-		}
+-		/* -l <sig list> */
+-		do {
++	if (arg[0] == '-') {
++		if (arg[1] == 'l') {
++			arg = *++argv;
++			if (!arg) {
++				print_signames();
++				return 0;
++			}
+ 			if (isdigit(arg[0])) {
+ 				signo = bb_strtou(arg, NULL, 10);
+-				if (errno) {
+-					bb_error_msg("unknown signal '%s'", arg);
+-					return EXIT_FAILURE;
+-				}
+-				/* Exitcodes >= 0x80 are to be treated
+-				 * as "killed by signal (exitcode & 0x7f)" */
+ 				puts(get_signame(signo & 0x7f));
+-				/* TODO: 'bad' signal# - coreutils says:
+-				 * kill: 127: invalid signal
+-				 * we just print "127" instead */
+ 			} else {
+ 				signo = get_signum(arg);
+ 				if (signo < 0) {
+@@ -166,179 +37,32 @@ int kill_main(int argc UNUSED_PARAM, char **argv)
+ 				}
+ 				printf("%d\n", signo);
+ 			}
+-			arg = *++argv;
+-		} while (arg);
+-		return EXIT_SUCCESS;
+-	}
+-
+-	/* The -q quiet option */
+-	if (is_killall && arg[1] == 'q' && arg[2] == '\0') {
+-#if ENABLE_KILL || ENABLE_KILLALL
+-		quiet = 1;
+-#endif
+-		arg = *++argv;
+-		if (!arg)
+-			bb_show_usage();
+-		if (arg[0] != '-')
+-			goto do_it_now;
+-	}
+-
+-	arg++; /* skip '-' */
+-
+-	/* -o PID? (if present, it always is at the end of command line) */
+-	if (is_killall5 && arg[0] == 'o')
+-		goto do_it_now;
+-
+-	/* "--" separates options from args. Testcase: "kill -- -123" */
+-	if (!is_killall5 && arg[0] == '-' && arg[1] == '\0')
+-		goto do_it_sooner;
+-
+-	if (argv[1] && arg[0] == 's' && arg[1] == '\0') { /* -s SIG? */
+-		arg = *++argv;
+-	} /* else it must be -SIG */
+-	signo = get_signum(arg);
+-	if (signo < 0) {
+-		bb_error_msg("bad signal name '%s'", arg);
+-		return EXIT_FAILURE;
+-	}
+- do_it_sooner:
+-	arg = *++argv;
+-
+- do_it_now:
+-	pid = getpid();
+-
+-	if (is_killall5) {
+-		pid_t sid;
+-		procps_status_t* p = NULL;
+-		/* compat: exitcode 2 is "no one was signaled" */
+-		errors = 2;
+-
+-		/* Find out our session id */
+-		sid = getsid(pid);
+-		/* Stop all processes */
+-		if (signo != SIGSTOP && signo != SIGCONT)
+-			kill(-1, SIGSTOP);
+-		/* Signal all processes except those in our session */
+-		while ((p = procps_scan(p, PSSCAN_PID|PSSCAN_SID)) != NULL) {
+-			char **args;
+-
+-			if (p->sid == (unsigned)sid
+-			 || p->sid == 0 /* compat: kernel thread, don't signal it */
+-			 || p->pid == (unsigned)pid
+-			 || p->pid == 1
+-			) {
+-				continue;
+-			}
+-
+-			/* All remaining args must be -o PID options.
+-			 * Check p->pid against them. */
+-			args = argv;
+-			while (*args) {
+-				pid_t omit;
+-
+-				arg = *args++;
+-				if (arg[0] != '-' || arg[1] != 'o') {
+-					bb_error_msg("bad option '%s'", arg);
+-					errors = 1;
+-					goto resume;
+-				}
+-				arg += 2;
+-				if (!arg[0] && *args)
+-					arg = *args++;
+-				omit = bb_strtoi(arg, NULL, 10);
+-				if (errno) {
+-					bb_error_msg("invalid number '%s'", arg);
+-					errors = 1;
+-					goto resume;
+-				}
+-				if (p->pid == omit)
+-					goto dont_kill;
+-			}
+-			kill(p->pid, signo);
+-			errors = 0;
+- dont_kill: ;
++			return EXIT_SUCCESS;
+ 		}
+- resume:
+-		/* And let them continue */
+-		if (signo != SIGSTOP && signo != SIGCONT)
+-			kill(-1, SIGCONT);
+-		return errors;
+-	}
+-
+-#if ENABLE_KILL || ENABLE_KILLALL
+-	/* Pid or name is required for kill/killall */
+-	if (!arg) {
+-		bb_simple_error_msg("you need to specify whom to kill");
+-		return EXIT_FAILURE;
++		arg++;
++		signo = get_signum(arg);
++		if (signo < 0) {
++			bb_error_msg("bad signal name '%s'", arg);
++			return EXIT_FAILURE;
++		}
++		arg = *++argv;
+ 	}
+ 
+-	if (!ENABLE_KILL || is_killall) {
+-		/* Looks like they want to do a killall.  Do that */
+-		do {
+-			pid_t* pidList;
+-
+-			pidList = find_pid_by_name(arg);
+-			if (*pidList == 0) {
+-				errors++;
+-				if (!quiet)
+-					bb_error_msg("%s: no process killed", arg);
+-			} else {
+-				pid_t *pl;
+-
+-				for (pl = pidList; *pl; pl++) {
+-					if (*pl == pid)
+-						continue;
+-					if (kill(*pl, signo) == 0)
+-						continue;
+-					errors++;
+-					if (!quiet)
+-						bb_perror_msg("can't kill pid %d", (int)*pl);
+-				}
+-			}
+-			free(pidList);
+-			arg = *++argv;
+-		} while (arg);
+-		return errors;
++	if (char3 == 'a') {
++		pid_t *pidList = find_pid_by_name(arg);
++		free(pidList);
++		return 0;
+ 	}
+-#endif
+ 
+-#if ENABLE_KILL
+-	/* Looks like they want to do a kill. Do that */
+ 	while (arg) {
+-# if SH_KILL
+-		/*
+-		 * We need to support shell's "hack formats" of
+-		 * " -PRGP_ID" (yes, with a leading space)
+-		 * and " PID1 PID2 PID3" (with degenerate case "")
+-		 */
+-		while (*arg != '\0') {
+-			char *end;
+-			if (*arg == ' ')
+-				arg++;
+-			pid = bb_strtoi(arg, &end, 10);
+-			if (errno && (errno != EINVAL || *end != ' ')) {
+-				bb_error_msg("invalid number '%s'", arg);
+-				errors++;
+-				break;
+-			}
+-			if (kill(pid, signo) != 0) {
+-				bb_perror_msg("can't kill pid %d", (int)pid);
+-				errors++;
+-			}
+-			arg = end; /* can only point to ' ' or '\0' now */
+-		}
+-# else /* ENABLE_KILL but !SH_KILL */
+ 		pid = bb_strtoi(arg, NULL, 10);
+ 		if (errno) {
+ 			bb_error_msg("invalid number '%s'", arg);
+ 			errors++;
+-		} else if (kill(pid, signo) != 0) {
+-			bb_perror_msg("can't kill pid %d", (int)pid);
+-			errors++;
++		} else if (pid > 1) {
++			kill(pid, signo);
+ 		}
+-# endif
+ 		arg = *++argv;
+ 	}
+ 	return errors;
+-#endif
+ }
+diff --git a/procps/pgrep.c b/procps/pgrep.c
+index 299e2da..37e3d30 100644
+--- a/procps/pgrep.c
++++ b/procps/pgrep.c
+@@ -125,15 +125,7 @@ int pgrep_main(int argc UNUSED_PARAM, char **argv)
+ 
+ 	memset(&Z, 0, sizeof(Z));
+ 
+-	/* Parse -SIGNAL for pkill. Must be first option, if present */
+ 	signo = SIGTERM;
+-	if (pkill && argv[1] && argv[1][0] == '-') {
+-		int temp = get_signum(argv[1]+1);
+-		if (temp != -1) {
+-			signo = temp;
+-			argv++;
+-		}
+-	}
+ 
+ 	/* Parse remaining options */
+ 	ppid2match = -1;
+@@ -150,7 +142,7 @@ int pgrep_main(int argc UNUSED_PARAM, char **argv)
+ 	if (sid2match == 0)
+ 		sid2match = getsid(pid);
+ 
+-	scan_mask = PSSCAN_COMM | PSSCAN_ARGV0;
++	scan_mask = PSSCAN_COMM | PSSCAN_ARGV0 | PSSCAN_PPID | PSSCAN_SID;
+ 	if (OPT_FULL)
+ 		scan_mask |= PSSCAN_ARGVN;
+ 
+@@ -168,11 +160,9 @@ int pgrep_main(int argc UNUSED_PARAM, char **argv)
+ 		char *cmd;
+ 		int cmdlen, match;
+ 
+-		if (proc->pid == pid)
+-			continue;
++		(void)pid;
+ 
+ 		if (!OPT_INVERT) {
+-			/* Quickly reject -sN -PN mismatches... unless -v */
+ 			if (ppid2match >= 0 && ppid2match != proc->ppid)
+ 				continue;
+ 			if (sid2match >= 0 && sid2match != proc->sid)
+@@ -181,46 +171,20 @@ int pgrep_main(int argc UNUSED_PARAM, char **argv)
+ 
+ 		cmdlen = -1;
+ 		cmd = proc->argv0;
+-		if (!cmd) {
+-			cmd = proc->comm;
+-		} else {
+-			int i = proc->argv_len;
+-
+-			if (!OPT_LISTFULL)
+-				cmdlen = strlen(cmd); /* not -a: find first NUL */
+-			/*
+-			 * "sleep 11" looks like "sleep""\0""11""\0" in argv0.
+-			 * Make sure last "\0" does not get converted to " ":
+-			 */
+-			if (i && cmd[i-1] == '\0')
+-				i--;
+-			while (--i >= 0) {
+-				if ((unsigned char)cmd[i] < ' ')
+-					cmd[i] = ' ';
+-			}
+-		}
++		if (!OPT_LISTFULL)
++			cmdlen = strlen(cmd);
+ 
+-		if (OPT_INVERT) {
+-			/* "pgrep -v -P1 firefox" means "not (ppid=1 AND name=firefox)"
+-			 * or equivalently "ppid!=1 OR name!=firefox".
+-			 * Check the first condition and if true, skip matching.
+-			 */
+-			if (ppid2match >= 0 && ppid2match != proc->ppid)
+-				goto got_it;
+-			if (sid2match >= 0 && sid2match != proc->sid)
+-				goto got_it;
+-		}
++		if (OPT_INVERT && ppid2match >= 0 && ppid2match != proc->ppid)
++			goto got_it;
+ 
+-		match = !argv[0]; /* if no PATTERN, then it's a match, else... */
++		match = !argv[0];
+ 		if (!match) {
+  again:
+ 			match = (regexec(&re_buffer, cmd, 1, re_match, 0) == 0);
+ 			if (match && OPT_ANCHOR) {
+-				/* -x requires full string match */
+ 				match = (re_match[0].rm_so == 0 && cmd[re_match[0].rm_eo] == '\0');
+ 			}
+ 			if (!match && cmd != proc->comm) {
+-				/* if argv[] did not match, try comm */
+ 				cmdlen = -1;
+ 				cmd = proc->comm;
+ 				goto again;
+diff --git a/procps/ps.c b/procps/ps.c
+index 5b521ae..065d3c1 100644
+--- a/procps/ps.c
++++ b/procps/ps.c
+@@ -131,8 +131,7 @@ static unsigned long get_uptime(void)
+ 	/* /proc/uptime is "UPTIME_SEC.NN IDLE_SEC.NN\n"
+ 	 * (where IDLE is cumulative over all CPUs)
+ 	 */
+-	if (open_read_close("/proc/uptime", buf, sizeof(buf)) <= 0)
+-		bb_perror_msg_and_die("can't read '%s'", "/proc/uptime");
++	open_read_close("/proc/uptime", buf, sizeof(buf));
+ 	buf[sizeof(buf)-1] = '\0';
+ 	sscanf(buf, "%lu", &uptime);
+ 	return uptime;
+@@ -288,10 +287,10 @@ static void func_rss(char *buf, int size, const procps_status_t *ps)
+ 
+ static void func_tty(char *buf, int size, const procps_status_t *ps)
+ {
++	(void)size;
++	(void)ps;
+ 	buf[0] = '?';
+ 	buf[1] = '\0';
+-	if (ps->tty_major) /* tty field of "0" means "no tty" */
+-		snprintf(buf, size+1, "%u,%u", ps->tty_major, ps->tty_minor);
+ }
+ 
+ #if ENABLE_FEATURE_PS_ADDITIONAL_COLUMNS
+@@ -312,36 +311,9 @@ static void func_nice(char *buf, int size, const procps_status_t *ps)
+ #if ENABLE_FEATURE_PS_TIME
+ static void format_time(char *buf, int size, unsigned long tt)
+ {
+-	unsigned ff;
+-
+-	/* Used to show "14453:50" if tt is large. Ugly.
+-	 * procps-ng 3.3.10 uses "[[dd-]hh:]mm:ss" format.
+-	 * TODO: switch to that?
+-	 */
+-
+-	/* Formatting for 5-char TIME column.
+-	 * NB: "size" is not always 5: ELAPSED is wider (7),
+-	 * not taking advantage of that (yet?).
+-	 */
+-	ff = tt % 60;
+-	tt /= 60;
+-	if (tt < 60) {
+-		snprintf(buf, size+1, "%2u:%02u", (unsigned)tt, ff);
+-		return;
+-	}
+-	ff = tt % 60;
++	unsigned ff = tt % 60;
+ 	tt /= 60;
+-	if (tt < 24) {
+-		snprintf(buf, size+1, "%2uh%02u", (unsigned)tt, ff);
+-		return;
+-	}
+-	ff = tt % 24;
+-	tt /= 24;
+-	if (tt < 100) {
+-		snprintf(buf, size+1, "%2ud%02u", (unsigned)tt, ff);
+-		return;
+-	}
+-	snprintf(buf, size+1, "%4lud", tt);
++	snprintf(buf, size+1, "%2u:%02u", (unsigned)(tt % 60), ff);
+ }
+ static void func_etime(char *buf, int size, const procps_status_t *ps)
+ {
+@@ -436,7 +408,7 @@ static void parse_o(char* opt)
+ 	while (1) {
+ 		comma = strchr(opt, ',');
+ 		equal = strchr(opt, '=');
+-		if (comma && (!equal || equal > comma)) {
++		if (comma && !equal) {
+ 			*comma = '\0';
+ 			*new_out_t() = *find_out_spec(opt);
+ 			*comma = ',';
+@@ -480,19 +452,9 @@ static void alloc_line_buffer(void)
+ 		if (out[i].header[0]) {
+ 			print_header = 1;
+ 		}
+-		width += out[i].width + 1; /* "FIELD " */
+-		if ((int)(width - terminal_width) > 0) {
+-			/* The rest does not fit on the screen */
+-			//out[i].width -= (width - terminal_width - 1);
+-			out_cnt = i + 1;
+-			break;
+-		}
++		width += out[i].width + 1;
+ 	}
+-#if ENABLE_SELINUX
+-	if (!is_selinux_enabled())
+-		need_flags &= ~PSSCAN_CONTEXT;
+-#endif
+-	buffer = xmalloc(width + 1); /* for trailing \0 */
++	buffer = xmalloc(width + 1);
+ }
+ 
+ static void format_header(void)
+@@ -505,38 +467,28 @@ static void format_header(void)
+ 		return;
+ 	p = buffer;
+ 	i = 0;
+-	if (out_cnt) {
+-		while (1) {
+-			op = &out[i];
+-			if (++i == out_cnt) /* do not pad last field */
+-				break;
+-			p += sprintf(p, "%-*s ", op->width, op->header);
+-		}
+-		strcpy(p, op->header);
++	while (1) {
++		op = &out[i];
++		if (++i == out_cnt)
++			break;
++		p += sprintf(p, "%-*s ", op->width, op->header);
+ 	}
++	strcpy(p, op->header);
+ 	printf("%.*s\n", terminal_width, buffer);
+ }
+ 
+ static void format_process(const procps_status_t *ps)
+ {
+-	int i, len;
++	int i = 0, len;
+ 	char *p = buffer;
+-	i = 0;
+-	if (out_cnt) while (1) {
++	while (1) {
+ 		out[i].f(p, out[i].width, ps);
+-		// POSIX: Any field need not be meaningful in all
+-		// implementations. In such a case a hyphen ( '-' )
+-		// should be output in place of the field value.
+-		if (!p[0]) {
+-			p[0] = '-';
+-			p[1] = '\0';
+-		}
+ 		len = strlen(p);
+ 		p += len;
+ 		len = out[i].width - len + 1;
+-		if (++i == out_cnt) /* do not pad last field */
++		if (++i == out_cnt)
+ 			break;
+-		p += sprintf(p, "%*s", len, " "); /* " ", not "", to ensure separation of fields */
++		p += sprintf(p, "%*s", len, " ");
+ 	}
+ 	printf("%.*s\n", terminal_width, buffer);
+ }
+@@ -624,11 +576,6 @@ int ps_main(int argc UNUSED_PARAM, char **argv)
+ 	/* Was INT_MAX, but some libc's go belly up with printf("%.*s")
+ 	 * and such large widths */
+ 	terminal_width = MAX_WIDTH;
+-	if (isatty(1)) {
+-		terminal_width = get_terminal_width(0);
+-		if (--terminal_width > MAX_WIDTH)
+-			terminal_width = MAX_WIDTH;
+-	}
+ 	alloc_line_buffer();
+ 	format_header();
+ 
+diff --git a/procps/uptime.c b/procps/uptime.c
+index aec7bd7..924bd83 100644
+--- a/procps/uptime.c
++++ b/procps/uptime.c
+@@ -87,15 +87,11 @@ int uptime_main(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+ 			current_time->tm_hour, current_time->tm_min, current_time->tm_sec
+ 	);
+ 	updays = (unsigned) info.uptime / (unsigned)(60*60*24);
+-	if (updays != 0)
+-		printf("%u day%s, ", updays, (updays != 1) ? "s" : "");
++	printf("%u days, ", updays);
+ 	upminutes = (unsigned) info.uptime / (unsigned)60;
+ 	uphours = (upminutes / (unsigned)60) % (unsigned)24;
+ 	upminutes %= 60;
+-	if (uphours != 0)
+-		printf("%2u:%02u", uphours, upminutes);
+-	else
+-		printf("%u min", upminutes);
++	printf("%2u:%02u", uphours, upminutes);
+ 
+ #if ENABLE_FEATURE_UPTIME_UTMP_SUPPORT
+ 	{
+diff --git a/procps/watch.c b/procps/watch.c
+index b828079..af7ce1a 100644
+--- a/procps/watch.c
++++ b/procps/watch.c
+@@ -91,39 +91,30 @@ int watch_main(int argc UNUSED_PARAM, char **argv)
+ 		if (!(opt & 0x2)) { // no -t
+ 			const unsigned time_len = sizeof("1234-67-90 23:56:89");
+ 
+-			// STDERR_FILENO is procps3 compat:
+-			// "watch ls 2>/dev/null" does not detect tty size
+ 			new_width = get_terminal_width(STDERR_FILENO);
+-			if (new_width != width) {
+-				width = new_width;
+-				free(header);
+-				header = xasprintf("Every"
+-					" %"IF_FLOAT_DURATION(".1")DURATION_FMT"s:"
+-					" %-*s",
+-					period,
+-					(int)width, cmd
+-				);
+-			}
+-			if (time_len < width) {
+-				strftime_YYYYMMDDHHMMSS(
+-					header + width - time_len,
+-					time_len,
+-					/*time_t*:*/ NULL
+-				);
+-			}
++			width = new_width;
++			free(header);
++			header = xasprintf("Every"
++				" %"IF_FLOAT_DURATION(".1")DURATION_FMT"s:"
++				" %-*s",
++				period,
++				(int)width, cmd
++			);
++			strftime_YYYYMMDDHHMMSS(
++				header + width - time_len,
++				time_len,
++				/*time_t*:*/ NULL
++			);
+ 
+ 			// compat: empty line between header and cmd output
+ 			printf("%s\n\n", header);
+ 		}
+ 		fflush_all();
+-		// TODO: 'real' watch pipes cmd's output to itself
+-		// and does not allow it to overflow the screen
+-		// (taking into account linewrap!)
+ 		if (argv[0]) // -x?
+ 			spawn_and_wait(argv); // yes
+ 		else
+ 			system(cmd);
+-		sleep_for_duration(period);
++		break;
+ 	}
+-	return 0; // gcc thinks we can reach this :)
++	return 0;
+ }
+diff --git a/util-linux/cal.c b/util-linux/cal.c
+index 0577c38..ef201fc 100644
+--- a/util-linux/cal.c
++++ b/util-linux/cal.c
+@@ -132,17 +132,13 @@ int cal_main(int argc UNUSED_PARAM, char **argv)
+ 		time(&now);
+ 		ptm = localtime(&now);
+ 		year = ptm->tm_year + 1900;
+-		if (!(flags & OPT_YEAR)) { /* no -y */
+-			month = ptm->tm_mon + 1;
+-		}
++		month = ptm->tm_mon + 1;
+ 	} else {
+ 		if (argv[1]) {
+ 			if (argv[2]) {
+ 				bb_show_usage();
+ 			}
+-			if (!(flags & OPT_YEAR)) { /* no -y */
+-				month = xatou_range(*argv, 1, 12);
+-			}
++			month = xatou_range(*argv, 1, 12);
+ 			argv++;
+ 		}
+ 		year = xatou_range(*argv, 1, 9999);
+diff --git a/util-linux/hexdump_xxd.c b/util-linux/hexdump_xxd.c
+index 783ca9b..3dd883c 100644
+--- a/util-linux/hexdump_xxd.c
++++ b/util-linux/hexdump_xxd.c
+@@ -76,6 +76,7 @@
+ 
+ #define fillbuf bb_common_bufsiz1
+ 
++#if 0
+ static void write_zeros(off_t count)
+ {
+ 	errno = 0;
+@@ -86,6 +87,7 @@ static void write_zeros(off_t count)
+ 		count -= sz;
+ 	} while (count != 0);
+ }
++#endif
+ 
+ static void reverse(unsigned opt, const char *filename, char *opt_s)
+ {
+@@ -95,11 +97,7 @@ static void reverse(unsigned opt, const char *filename, char *opt_s)
+ 
+ 	memset(fillbuf, 0, COMMON_BUFSIZE);
+ 	opt_s_ofs = cur = 0;
+-	if (opt_s) {
+-		opt_s_ofs = BB_STRTOOFF(opt_s, NULL, 0);
+-		if (errno || opt_s_ofs < 0)
+-			bb_error_msg_and_die("invalid number '%s'", opt_s);
+-	}
++
+ 
+ 	fp = filename ? xfopen_for_read(filename) : stdin;
+ 
+@@ -113,27 +111,13 @@ static void reverse(unsigned opt, const char *filename, char *opt_s)
+ 			off_t ofs;
+  skip_address:
+ 			p = skip_whitespace(p);
++			(void)opt_s_ofs;
+ 			ofs = BB_STRTOOFF(p, &end, 16);
+-			if ((errno && errno != EINVAL)
+-			 || ofs < 0
+-			/* -s SEEK value should be added before seeking */
+-			 || (ofs += opt_s_ofs) < 0
+-			) {
+-				bb_error_msg_and_die("invalid number '%s'", p);
+-			}
+ 			if (ofs != cur) {
+-				if (fseeko(stdout, ofs, SEEK_SET) != 0) {
+-					if (ofs < cur)
+-						bb_simple_perror_msg_and_die("cannot seek");
+-					write_zeros(ofs - cur);
+-				}
++				fseeko(stdout, ofs, SEEK_SET);
+ 				cur = ofs;
+ 			}
+-			p = end;
+-			/* NB: for xxd -r, first hex portion is address even without colon */
+-			/* But if colon is there, skip it: */
+-			if (*p == ':')
+-				p++;
++			p = end + 1;
+ 		}
+ 
+ 		/* Process hex bytes optionally separated by whitespace */
+@@ -146,8 +130,6 @@ static void reverse(unsigned opt, const char *filename, char *opt_s)
+ 			c = *p++;
+ 			if (isdigit(c))
+ 				val = c - '0';
+-			else if ((c|0x20) >= 'a' && (c|0x20) <= 'f')
+-				val = (c|0x20) - ('a' - 10);
+ 			else {
+ 				/* xxd V1.10 allows one non-hexnum char:
+ 				 *  echo -e "31 !3 0a 0a" | xxd -r -p
+@@ -185,30 +167,7 @@ static void reverse(unsigned opt, const char *filename, char *opt_s)
+ 			else if ((c|0x20) >= 'a' && (c|0x20) <= 'f')
+ 				val |= (c|0x20) - ('a' - 10);
+ 			else {
+-				if (c != '\0') {
+-					/* "...3<not_hex_char>...": ignore "3",
+-					 * skip everything up to next hexchar or newline:
+-					 */
+-					while (!isxdigit(*p)) {
+-						if (*p == '\0') {
+-							free(buf);
+-							goto get_new_line;
+-						}
+-						p++;
+-					}
+-					goto nibble1;
+-				}
+-				/* Nibbles can join even through newline:
+-				 * echo -e "31 3\n2 0a" | xxd -r -p
+-				 * is "12<cr>".
+-				 */
+-				free(buf);
+-				p = buf = xmalloc_fgetline(fp);
+-				if (!buf)
+-					break;
+-				if (!(opt & OPT_p)) /* -p and !-p: different behavior */
+-					goto skip_address;
+-				goto nibble2;
++				goto nibble1;
+ 			}
+ 			putchar(val);
+ 			cur++;
+@@ -278,12 +237,9 @@ int xxd_main(int argc UNUSED_PARAM, char **argv)
+ 	}
+ 
+ 	if (opt & OPT_p) {
+-		if (cols == 0)
+-			cols = 30;
+ 		bytes = cols; /* -p ignores -gN */
+ 	} else {
+-		if (cols == 0)
+-			cols = (opt & OPT_i) ? 12 : 16;
++		cols = (opt & OPT_i) ? 12 : 16;
+ 		if (opt & OPT_i) {
+ 			bytes = 1; // -i ignores -gN
+ 			// output is "  0xXX, 0xXX, 0xXX...", add leading space
+@@ -297,11 +253,7 @@ int xxd_main(int argc UNUSED_PARAM, char **argv)
+ 		bb_dump_add(dumper, buf);
+ 	}
+ 	else if (bytes == 1) {
+-		if (opt & OPT_i)
+-			sprintf(buf, "%u/1 \" 0x%%02x,\"", cols); // cols * " 0xXX,"
+-//TODO: compat: omit the last comma after the very last byte
+-		else
+-			sprintf(buf, "%u/1 \"%%02x \"", cols); // cols * "XX "
++		sprintf(buf, "%u/1 \" 0x%%02x,\"", cols); // cols * " 0xXX,"
+ 		bb_dump_add(dumper, buf);
+ 	}
+ 	else {
+@@ -333,13 +285,12 @@ int xxd_main(int argc UNUSED_PARAM, char **argv)
+ 		dumper->xxd_eofstring = "\n";
+ 	}
+ 
+-	if ((opt & OPT_i) && argv[0]) {
++	if (opt & OPT_i) {
+ 		print_C_style(argv[0], "unsigned char %s");
+ 		puts("[] = {");
+-//TODO: if file does not exist, shouldn't print the above lines
+ 	}
+ 	r = bb_dump_dump(dumper, argv);
+-	if (r == 0 && (opt & OPT_i) && argv[0]) {
++	if (opt & OPT_i) {
+ 		print_C_style(argv[0], "};\nunsigned int %s");
+ 		printf("_len = %"OFF_FMT"u;\n", dumper->address);
+ 	}

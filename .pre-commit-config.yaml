@@ -1,23 +1,31 @@
-# See https://pre-commit.com for more information
-# See https://pre-commit.com/hooks.html for more hooks
+# =============================================================================
+# .pre-commit-config.yaml - Pre-Commit Quality, Typing, Coverage & Hygiene Gates
+#
+# Enforces:
+#   - Line endings (LF for Unix/source files, CRLF for Windows .bat/.cmd files)
+#   - Trailing whitespace, EOF newline, YAML/TOML syntax, merge/case conflicts
+#   - Prohibition of any .c or .h files inside busybox-windows
+#   - 100% Python docstring coverage (ruff D rules + interrogate)
+#   - Strict static typing (ruff ANN rules + mypy --strict)
+#   - 100% Python unit test line, branch, and function coverage (pytest --cov)
+# =============================================================================
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      # dos2unix: convert DOS/Windows (CRLF) line endings to Unix (LF)
       - id: mixed-line-ending
         name: dos2unix (enforce LF)
         args: [--fix=lf]
         exclude: '(?i)(\.(cmd|bat)$)'
 
-      # unix2dos: convert Unix (LF) line endings to DOS/Windows (CRLF) for Windows batch files
       - id: mixed-line-ending
         name: unix2dos (enforce CRLF)
         args: [--fix=crlf]
         files: '(?i)(\.(cmd|bat)$)'
 
-      # Basic file and syntax sanity checks
       - id: check-yaml
+      - id: check-toml
       - id: check-added-large-files
       - id: check-case-conflict
       - id: check-merge-conflict
@@ -25,3 +33,46 @@ repos:
         exclude: '(?i)(\.(cmd|bat|patch|diff)$)'
       - id: trailing-whitespace
         exclude: '(?i)(\.(cmd|bat|patch|diff)$)'
+
+  - repo: local
+    hooks:
+      - id: forbid-c-headers-and-sources
+        name: Forbid .c and .h files in busybox-windows
+        language: fail
+        entry: "Direct .c/.h files are forbidden in busybox-windows; use ../auto-win-msvc or patches/."
+        files: '(?i)\.(c|h|h\.in)$'
+
+      - id: ruff-check
+        name: Ruff Linter (D, DOC, ANN, B, E, F, I, UP, W)
+        entry: ruff check scripts tests
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: ruff-format
+        name: Ruff Formatter Check
+        entry: ruff format --check scripts tests
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: interrogate
+        name: Interrogate 100% Docstring Coverage
+        entry: interrogate --fail-under=100 -vv scripts tests
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: mypy
+        name: Mypy Strict Type Checking
+        entry: python3 -m mypy --strict scripts tests
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: pytest-coverage
+        name: Pytest 100% Line, Branch & Function Coverage
+        entry: python3 -m pytest --cov=scripts --cov=tests --cov-branch --cov-fail-under=100
+        language: system
+        pass_filenames: false
+        types: [python]
