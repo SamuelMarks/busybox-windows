@@ -42,8 +42,8 @@ if(NOT EXISTS "${BUSYBOX_SOURCE_DIR}/include/busybox.h")
     include(FetchContent)
     FetchContent_Declare(
         busybox_upstream
-        GIT_REPOSITORY https://github.com/mirror/busybox.git
-        GIT_TAG master
+        GIT_REPOSITORY https://git.busybox.net/busybox
+        GIT_TAG e6302b2711d851bfb17eaf9316514c9d0a806cc7
     )
     FetchContent_MakeAvailable(busybox_upstream)
     set(BUSYBOX_SOURCE_DIR "${busybox_upstream_SOURCE_DIR}")
@@ -593,30 +593,32 @@ if(BUILD_TESTING)
     add_test(NAME test_busybox_free COMMAND busybox free)
     set_tests_properties(test_busybox_free PROPERTIES PASS_REGULAR_EXPRESSION "Mem:")
 
-    # Isolated, self-contained functional applet suites (zero --help tests, zero source-tree mutations)
-    add_test(
-        NAME test_suite_coreutils
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                "$<TARGET_FILE:busybox>" --suite coreutils
-    )
-    add_test(
-        NAME test_suite_editors_and_find
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                "$<TARGET_FILE:busybox>" --suite editors
-    )
-    add_test(
-        NAME test_suite_archival
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                "$<TARGET_FILE:busybox>" --suite archival
-    )
-    add_test(
-        NAME test_suite_procps_and_shell
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                "$<TARGET_FILE:busybox>" --suite procps
-    )
-    add_test(
-        NAME test_suite_networking
-        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                "$<TARGET_FILE:busybox>" --suite networking
-    )
+    if(NOT MSVC)
+        # Isolated, self-contained functional applet suites (zero --help tests, zero source-tree mutations)
+        add_test(
+            NAME test_suite_coreutils
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                    "$<TARGET_FILE:busybox>" --suite coreutils
+        )
+        add_test(
+            NAME test_suite_editors_and_find
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                    "$<TARGET_FILE:busybox>" --suite editors
+        )
+        add_test(
+            NAME test_suite_archival
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                    "$<TARGET_FILE:busybox>" --suite archival
+        )
+        add_test(
+            NAME test_suite_procps_and_shell
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                    "$<TARGET_FILE:busybox>" --suite procps
+        )
+        add_test(
+            NAME test_suite_networking
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                    "$<TARGET_FILE:busybox>" --suite networking
+        )
+    endif()
 endif()

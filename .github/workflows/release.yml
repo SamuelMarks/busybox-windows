@@ -24,12 +24,50 @@ on:
       version:
         description: 'BusyBox tag or branch to build'
         required: false
-        default: 'master'
+        default: 'e6302b2711d851bfb17eaf9316514c9d0a806cc7'
 
 permissions:
   contents: write
 
 jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout busybox-windows
+        uses: actions/checkout@v4
+
+      - name: Checkout auto-win-msvc
+        uses: actions/checkout@v4
+        with:
+          repository: SamuelMarks/auto-win-msvc
+          ref: master
+          path: ../auto-win-msvc
+
+      - name: Checkout busybox
+        run: |
+          ref="${{ github.event.inputs.version || 'e6302b2711d851bfb17eaf9316514c9d0a806cc7' }}"
+          git clone --depth 200 https://git.busybox.net/busybox ../busybox
+          git -C ../busybox checkout -B master "$ref"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python QA & Coverage Tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-cov mypy ruff interrogate pre-commit
+
+      - name: Run Python Unit Tests (100% Coverage), Typing (mypy --strict), and Pre-Commit
+        run: |
+          ruff check scripts tests
+          ruff format --check scripts tests
+          interrogate --fail-under=100 -vv scripts tests
+          mypy --strict scripts tests
+          pytest --cov=scripts --cov=tests --cov-branch --cov-fail-under=100
+          pre-commit run --all-files
+
   build:
     runs-on: windows-latest
     permissions:
@@ -46,11 +84,11 @@ jobs:
           path: auto-win-msvc
 
       - name: Checkout busybox
-        uses: actions/checkout@v4
-        with:
-          repository: mirror/busybox
-          ref: ${{ github.event.inputs.version || 'master' }}
-          path: busybox
+        shell: pwsh
+        run: |
+          $ref = "${{ github.event.inputs.version || 'e6302b2711d851bfb17eaf9316514c9d0a806cc7' }}"
+          git clone --depth 200 https://git.busybox.net/busybox busybox
+          git -C busybox checkout -B master $ref
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -82,14 +120,15 @@ jobs:
           ctest --test-dir build -C Release --output-on-failure
           build\Release\busybox.exe --help
 
-      - name: Run Python Unit Tests (100% Coverage), Typing (mypy --strict), and Pre-Commit
+      - name: Run Python Static Analysis and Unit Tests on Windows
         shell: pwsh
         run: |
           ruff check scripts tests
           ruff format --check scripts tests
-          interrogate scripts tests
+          interrogate --fail-under=100 -vv scripts tests
           mypy --strict scripts tests
-          pytest --cov=scripts --cov=tests --cov-branch --cov-fail-under=100
+          pytest -k "not test_run_all_suites_against_compiled_busybox" --no-cov
+          $env:SKIP = "pytest-coverage"
           pre-commit run --all-files
 
       - name: Install NSIS

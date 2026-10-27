@@ -51,7 +51,8 @@ To build BusyBox for Windows from source using Visual Studio / MSVC:
 
 1. Clone `busybox`, `auto-win-msvc`, and `busybox-windows` side-by-side:
    ```cmd
-   git clone https://github.com/mirror/busybox.git
+   git clone --depth 200 https://git.busybox.net/busybox
+   git -C busybox checkout -B master e6302b2711d851bfb17eaf9316514c9d0a806cc7
    git clone https://github.com/SamuelMarks/auto-win-msvc.git
    git clone https://github.com/SamuelMarks/busybox-windows.git
    ```

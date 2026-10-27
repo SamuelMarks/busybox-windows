@@ -13,7 +13,7 @@ REM ===========================================================================
 setlocal enabledelayedexpansion
 
 set BUSYBOX_REF=%~1
-if "%BUSYBOX_REF%"=="" set BUSYBOX_REF=master
+if "%BUSYBOX_REF%"=="" set BUSYBOX_REF=e6302b2711d851bfb17eaf9316514c9d0a806cc7
 
 echo ==============================================
 echo Building BusyBox Windows Release (%BUSYBOX_REF%)
@@ -26,8 +26,9 @@ if not exist busybox (
         echo Using local ..\busybox repository...
         set CMAKE_EXTRA_ARGS=!CMAKE_EXTRA_ARGS! -DBUSYBOX_SOURCE_DIR=..\busybox
     ) else (
-        echo Cloning BusyBox from https://github.com/mirror/busybox.git...
-        git clone --branch %BUSYBOX_REF% --depth 1 https://github.com/mirror/busybox.git busybox
+        echo Cloning BusyBox from https://git.busybox.net/busybox...
+        git clone --depth 200 https://git.busybox.net/busybox busybox
+        git -C busybox checkout -B master %BUSYBOX_REF%
         set CMAKE_EXTRA_ARGS=!CMAKE_EXTRA_ARGS! -DBUSYBOX_SOURCE_DIR=busybox
     )
 ) else (

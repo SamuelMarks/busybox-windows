@@ -65,14 +65,14 @@ repos:
 
       - id: mypy
         name: Mypy Strict Type Checking
-        entry: python3 -m mypy --strict scripts tests
+        entry: mypy --strict scripts tests
         language: system
         pass_filenames: false
         types: [python]
 
       - id: pytest-coverage
         name: Pytest 100% Line, Branch & Function Coverage
-        entry: python3 -m pytest --cov=scripts --cov=tests --cov-branch --cov-fail-under=100
+        entry: pytest --cov=scripts --cov=tests --cov-branch --cov-fail-under=100
         language: system
         pass_filenames: false
         types: [python]
