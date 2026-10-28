@@ -1325,7 +1325,7 @@ index c1fd914..8124784 100644
 -		rows = MAX_SCR_ROWS;
 -	if (columns > MAX_SCR_COLS)
 -		columns = MAX_SCR_COLS;
-+	
++
  	return err;
  }
  #else
@@ -1565,7 +1565,7 @@ index c1fd914..8124784 100644
  
 -	if (size <= 0)
 -		return bias;
-+	
++
  	end += size;		// adjust the new END
  	if (end >= (text + text_size)) {
  		char *new_text;
@@ -1872,7 +1872,7 @@ index c1fd914..8124784 100644
 -			indentcol = get_column(p);
 -			return p;
 -		}
-+		
++
  #endif
  #if ENABLE_FEATURE_VI_SETOPTS
  	} else if (c == '\t' && expandtab) {	// expand tab

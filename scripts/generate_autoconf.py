@@ -22,9 +22,16 @@ from scripts.applets_manifest import (
 
 SKIPPED_SYMBOLS: frozenset[str] = frozenset(
     {
-        "BUSYBOX_EXEC_PATH",
-        "LITTLE_ENDIAN",
+        "BASH_DOLLAR_SQUOTE",
+        "BASH_FUNCTION",
+        "BASH_PATTERN_SUBST",
+        "BASH_PROCESS_SUBST",
+        "BASH_REDIR_OUTPUT",
         "BIG_ENDIAN",
+        "BUSYBOX_EXEC_PATH",
+        "HAS_KEYWORDS",
+        "HUSH_DOLLAR_OPS",
+        "LITTLE_ENDIAN",
         "VARIABLE_ARCH_PAGESIZE",
     }
 )
