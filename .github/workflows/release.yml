@@ -34,13 +34,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout busybox-windows
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout auto-win-msvc
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: SamuelMarks/auto-win-msvc
-          ref: master
+          ref: 3ade97d36fb17864fb8eb244748d053067ca0acc
           path: auto-win-msvc
 
       - name: Checkout busybox
@@ -50,7 +50,7 @@ jobs:
           git -C busybox checkout -B master "$ref"
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -74,13 +74,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout busybox-windows
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Checkout auto-win-msvc
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: SamuelMarks/auto-win-msvc
-          ref: master
+          ref: 3ade97d36fb17864fb8eb244748d053067ca0acc
           path: auto-win-msvc
 
       - name: Checkout busybox
@@ -91,7 +91,7 @@ jobs:
           git -C busybox checkout -B master $ref
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -147,7 +147,7 @@ jobs:
           cpack -C Release -G NSIS
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: busybox-windows-packages
           path: |
