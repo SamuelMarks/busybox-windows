@@ -33,6 +33,9 @@ CR = chr(13)
 CRLF = CR + NL
 TAB = chr(9)
 NUL_BYTE = bytes([0])
+_mkfifo: Callable[[str], None] = getattr(os, "mkfifo", os.unlink)
+_AF_UNIX: int = getattr(socket, "AF_UNIX", socket.AF_INET)
+_SIGWINCH: int = getattr(signal, "SIGWINCH", signal.SIGINT)
 
 
 def _bb_cmd(busybox: Path, args: Sequence[str]) -> list[str]:
@@ -1439,10 +1442,10 @@ def _exercise_batch_coreutils_applets(busybox: Path, work: Path) -> None:
     st_bad_sym = bdir / "bad_sym.txt"
     st_bad_sym.symlink_to(bdir / "nonexistent_target")
     st_fifo = bdir / "fifo.pipe"
-    os.mkfifo(str(st_fifo))
+    _mkfifo(str(st_fifo))
     with tempfile.TemporaryDirectory(prefix="bb_st_") as sock_dir:
         st_sock_path = Path(sock_dir) / "s"
-        st_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        st_sock = socket.socket(_AF_UNIX, socket.SOCK_STREAM)
         st_sock.bind(str(st_sock_path))
         try:
             all_file_fmt = (
@@ -1756,7 +1759,7 @@ def _exercise_batch_coreutils_applets(busybox: Path, work: Path) -> None:
     t_f1.write_text("hard", encoding="utf-8")
     os.link(t_f1, cp_tree / "f2.txt")
     (cp_tree / "sym_rel").symlink_to("f1.txt")
-    os.mkfifo(str(cp_tree / "fifo_node"))
+    _mkfifo(str(cp_tree / "fifo_node"))
     unreadable_f = cp_tree / "unreadable.txt"
     unreadable_f.write_text("sec", encoding="utf-8")
     unreadable_f.chmod(0)
@@ -2303,7 +2306,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     finally:
         (diff_unread_file / "a.txt").chmod(0o644)
     diff_fifo = work / "diff_fifo"
-    os.mkfifo(str(diff_fifo))
+    _mkfifo(str(diff_fifo))
     writer_proc = subprocess.Popen(
         [sys.executable, "-c", f"open({str(diff_fifo)!r}, 'wb').write(b'line1\\nline2\\n')"]
     )
@@ -3188,7 +3191,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     os.close(r_sig)
     os.write(w_sig, b"\x1b[24;80R")
     time.sleep(0.06)
-    sig_proc.send_signal(signal.SIGWINCH)
+    sig_proc.send_signal(_SIGWINCH)
     time.sleep(0.03)
     os.write(w_sig, b"\x1b[24;80R")
     time.sleep(0.04)

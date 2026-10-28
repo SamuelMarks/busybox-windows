@@ -1600,6 +1600,7 @@ BUSYBOX_SOURCES: Final[tuple[str, ...]] = (
     "libbb/llist.c",
     "libbb/login.c",
     "libbb/make_directory.c",
+    "libbb/makedev.c",
     "libbb/messages.c",
     "libbb/mode_string.c",
     "libbb/parse_config.c",

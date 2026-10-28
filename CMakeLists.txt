@@ -349,6 +349,7 @@ set(BUSYBOX_CORE_SOURCES
     "${BUSYBOX_SOURCE_DIR}/libbb/llist.c"
     "${BUSYBOX_SOURCE_DIR}/libbb/login.c"
     "${BUSYBOX_SOURCE_DIR}/libbb/make_directory.c"
+    "${BUSYBOX_SOURCE_DIR}/libbb/makedev.c"
     "${BUSYBOX_SOURCE_DIR}/libbb/messages.c"
     "${BUSYBOX_SOURCE_DIR}/libbb/mode_string.c"
     "${BUSYBOX_SOURCE_DIR}/libbb/parse_config.c"
@@ -507,6 +508,13 @@ target_compile_definitions(busybox PRIVATE
 
 if(TARGET auto-win-msvc)
     target_link_libraries(busybox PRIVATE auto-win-msvc)
+endif()
+
+if(UNIX)
+    find_library(MATH_LIBRARY m)
+    if(MATH_LIBRARY)
+        target_link_libraries(busybox PRIVATE "${MATH_LIBRARY}")
+    endif()
 endif()
 
 if(UNIX AND NOT LINUX)
