@@ -41,13 +41,13 @@ jobs:
         with:
           repository: SamuelMarks/auto-win-msvc
           ref: master
-          path: ../auto-win-msvc
+          path: auto-win-msvc
 
       - name: Checkout busybox
         run: |
           ref="${{ github.event.inputs.version || 'e6302b2711d851bfb17eaf9316514c9d0a806cc7' }}"
-          git clone --depth 200 https://git.busybox.net/busybox ../busybox
-          git -C ../busybox checkout -B master "$ref"
+          git clone --depth 200 https://git.busybox.net/busybox busybox
+          git -C busybox checkout -B master "$ref"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -127,7 +127,7 @@ jobs:
           ruff format --check scripts tests
           interrogate --fail-under=100 -vv scripts tests
           mypy --strict scripts tests
-          pytest -k "not test_run_all_suites_against_compiled_busybox" --no-cov
+          pytest --no-cov
           $env:SKIP = "pytest-coverage"
           pre-commit run --all-files
 

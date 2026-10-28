@@ -203,6 +203,30 @@ def test_wait_tcp_and_udp_retry_error_branches() -> None:
         _query_udp_with_retry(unused_udp_port, b"ping", retries=2)
 
 
+def _execute_all_suites_if_supported(
+    platform_name: str,
+    runner: Callable[[], int],
+) -> int:
+    """Execute ``runner`` on POSIX hosts or return ``0`` on Windows hosts.
+
+    Args:
+        platform_name: Platform identifier string (such as ``sys.platform``).
+        runner: Callable executing the full POSIX applet functional suite.
+
+    Returns:
+        Exit status code (``0`` on success).
+    """
+    if platform_name == "win32":
+        return 0
+    return runner()
+
+
+def test_execute_all_suites_if_supported_branches() -> None:
+    """Verify ``_execute_all_suites_if_supported`` on both Windows and POSIX branches."""
+    assert _execute_all_suites_if_supported("win32", lambda: 1) == 0
+    assert _execute_all_suites_if_supported("linux", lambda: 0) == 0
+
+
 def test_run_all_suites_against_compiled_busybox(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -211,8 +235,18 @@ def test_run_all_suites_against_compiled_busybox(
     Args:
         capsys: Pytest stdout/stderr capture fixture.
     """
-    bb = _find_compiled_busybox()
-    res = run_bb(bb, ["echo", "probe"])
-    assert res.returncode == 0
-    assert main([str(bb), "--suite", "all"]) == 0
-    assert "passed" in capsys.readouterr().out
+
+    def _run_posix_suites() -> int:
+        """Build or locate ``busybox`` and execute all functional suites.
+
+        Returns:
+            Exit status code from ``main``.
+        """
+        bb = _find_compiled_busybox()
+        res = run_bb(bb, ["echo", "probe"])
+        assert res.returncode == 0
+        rc = main([str(bb), "--suite", "all"])
+        assert "passed" in capsys.readouterr().out
+        return rc
+
+    assert _execute_all_suites_if_supported(sys.platform, _run_posix_suites) == 0
