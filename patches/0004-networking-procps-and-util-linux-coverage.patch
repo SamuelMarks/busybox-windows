@@ -349,7 +349,7 @@ index 1172850..7cd2759 100644
 +	return ftp_send(argv[1], argv[2] ? argv[2] : argv[1]);
  }
 diff --git a/networking/httpd.c b/networking/httpd.c
-index 7469de1..c0e6b85 100644
+index 7469de1..4cc39ce 100644
 --- a/networking/httpd.c
 +++ b/networking/httpd.c
 @@ -776,15 +776,7 @@ static int parse_conf(const char *path, int flag)
@@ -436,7 +436,7 @@ index 7469de1..c0e6b85 100644
  	}
  #if ENABLE_FEATURE_HTTPD_ETAG
  	/* ETag is "hex(last_mod)-hex(file_size)" e.g. "5e132e20-417" */
-@@ -1991,63 +1961,11 @@ static NOINLINE void send_file_and_exit(const char *url, int what)
+@@ -1991,64 +1961,12 @@ static NOINLINE void send_file_and_exit(const char *url, int what)
  		}
  	}
  #endif
@@ -474,8 +474,12 @@ index 7469de1..c0e6b85 100644
 -			IF_FEATURE_HTTPD_RANGES(range_len -= count;)
 -			if (count == 0 || range_len == 0)
 -				send_EOF_and_exit();
--		}
--	}
++	send_headers(HTTP_OK);
++	if (what & SEND_BODY) {
++		while ((count = safe_read(fd, iobuf, IOBUF_SIZE)) > 0) {
++			full_write(STDOUT_FILENO, iobuf, count);
+ 		}
+ 	}
 -#endif
 -	while ((count = safe_read(fd, iobuf, IOBUF_SIZE)) > 0) {
 -		ssize_t n;
@@ -489,11 +493,7 @@ index 7469de1..c0e6b85 100644
 -				log_and_exit();
 -			}
 -			break;
-+	send_headers(HTTP_OK);
-+	if (what & SEND_BODY) {
-+		while ((count = safe_read(fd, iobuf, IOBUF_SIZE)) > 0) {
-+			full_write(STDOUT_FILENO, iobuf, count);
- 		}
+-		}
 -		IF_FEATURE_HTTPD_RANGES(range_len -= count;)
 -		if (range_len == 0)
 -			break;
@@ -501,9 +501,10 @@ index 7469de1..c0e6b85 100644
 -	if (count < 0) {
 -		if (VERBOSE_1)
 -			bb_simple_perror_msg("read error");
- 	}
+-	}
  	send_EOF_and_exit();
  }
+ 
 @@ -2299,28 +2217,7 @@ static Htaccess_Proxy *find_proxy_entry(const char *url)
  /*
   * Handle timeouts
@@ -666,7 +667,43 @@ index 7469de1..c0e6b85 100644
  }
  #else
  static void mini_httpd_nommu(int server_socket, int argc, char **argv) NORETURN;
-@@ -2975,24 +2787,12 @@ static void mini_httpd_inetd(void)
+@@ -2934,33 +2746,8 @@ static void mini_httpd_nommu(int server_socket, int argc, char **argv)
+ 	 */
+ 	countdown = G.conn_limit;
+ 	while (1) {
+-		int n;
+-
+-		if (G.children_fd > 0 && --countdown < 0)
+-			countdown = throttle_if_conn_limit();
+-
+-		/* Wait for connections... */
+-		n = accept(0, NULL, NULL);
+-		if (n < 0)
+-			continue;
+-
+-		/* set the KEEPALIVE option to cull dead connections */
+-		setsockopt_keepalive(n);
+-
+-		if (vfork() == 0) {
+-			/* child */
+-			/* Do not reload config on HUP */
+-			/*signal(SIGHUP, SIG_IGN); - not needed, handler is a NOP in children (checks pid) */
+-			/* close(0); - server socket. The next line does this for free */
+-			xmove_fd(n, 0);
+-			xdup2(0, 1);
+-
+-			/* Run a copy of ourself in inetd mode */
+-			re_exec(argv_copy);
+-		}
+-		/* parent, or vfork failed */
+-		argv_copy[0][0] &= 0x7f; /* undo re_rexec() damage */
+-		close(n);
++		(void)countdown;
++		(void)argv_copy;
+ 	} /* while (1) */
+ 	/* never reached */
+ }
+@@ -2975,24 +2762,12 @@ static void mini_httpd_inetd(void)
  {
  	len_and_sockaddr fromAddr;
  
@@ -691,7 +728,7 @@ index 7469de1..c0e6b85 100644
  enum {
  	c_opt_config_file = 0,
  	d_opt_decode_url,
-@@ -3148,21 +2948,11 @@ int httpd_main(int argc UNUSED_PARAM, char **argv)
+@@ -3148,21 +2923,11 @@ int httpd_main(int argc UNUSED_PARAM, char **argv)
  	}
  #endif
  	parse_conf(DEFAULT_PATH_HTTPD_CONF, FIRST_PARSE);
@@ -1333,7 +1370,7 @@ index d1f7680..c45944e 100644
  	doexit(EXIT_SUCCESS);
  }
 diff --git a/networking/telnetd.c b/networking/telnetd.c
-index eca4e51..f7214dd 100644
+index eca4e51..6a5be84 100644
 --- a/networking/telnetd.c
 +++ b/networking/telnetd.c
 @@ -188,27 +188,9 @@ struct globals {
@@ -1820,7 +1857,7 @@ index eca4e51..f7214dd 100644
  		to_net = new_pty_to_net(ptyfd, sockwr);
  		to_pty = new_net_to_pty(sockrd, ptyfd);
  		dbg("to_net:%p to_pty:%p", to_net, to_pty);
-@@ -929,8 +695,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+@@ -929,23 +695,11 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
  	/* Open the child's side of the pty */
  	/* NB: setsid() disconnects from any previous ctty's. Therefore
  	 * we must open child's side of the tty AFTER setsid! */
@@ -1830,7 +1867,22 @@ index eca4e51..f7214dd 100644
  	xdup2(0, 1);
  	xdup2(0, 2);
  	tcsetpgrp(0, pid); /* switch this tty's process group to us */
-@@ -975,7 +740,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+ 
+-	if (ENABLE_FEATURE_UTMP) {
+-		len_and_sockaddr *lsa = get_peer_lsa(sockrd);
+-		char *hostname = NULL;
+-		if (lsa) {
+-			hostname = xmalloc_sockaddr2dotted(&lsa->u.sa);
+-			free(lsa);
+-		}
+-		write_new_utmp(pid, LOGIN_PROCESS, tty_name, /*username:*/ "LOGIN", hostname);
+-		IF_FEATURE_CLEAN_UP(free(hostname);)
+-	}
+-
+ 	/* The pseudo-terminal allocated to the client is configured to operate
+ 	 * in cooked mode, and with XTABS CRMOD enabled (see tty(4)) */
+ 	tcgetattr(0, &termbuf);
+@@ -975,7 +729,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
  	BB_EXECVP(G.loginpath, (char **)login_argv);
  	/* _exit is safer with vfork, and we shouldn't send message
  	 * to remote clients anyway */
@@ -1839,7 +1891,7 @@ index eca4e51..f7214dd 100644
  }
  
  
-@@ -994,15 +759,11 @@ static int accept_conn__accept(void *this)
+@@ -994,15 +748,11 @@ static int accept_conn__accept(void *this)
  	struct accept_conn *ts = this;
  	int fd;
  
@@ -1859,7 +1911,7 @@ index eca4e51..f7214dd 100644
  }
  
  static int accept_conn__return_zero(void *this UNUSED_PARAM)
-@@ -1027,24 +788,8 @@ static void handle_sigchld(int sig UNUSED_PARAM)
+@@ -1027,24 +777,8 @@ static void handle_sigchld(int sig UNUSED_PARAM)
  {
  	int save_errno = errno;
  
@@ -1886,7 +1938,7 @@ index eca4e51..f7214dd 100644
  
  	errno = save_errno;
  }
-@@ -1691,7 +1436,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+@@ -1691,7 +1425,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
  		}
  	}
  	/* Redirect log to syslog early, if needed */
@@ -1895,7 +1947,7 @@ index eca4e51..f7214dd 100644
  		openlog(applet_name, LOG_PID, LOG_DAEMON);
  		logmode = LOGMODE_SYSLOG;
  	}
-@@ -1701,18 +1446,13 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+@@ -1701,18 +1435,13 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
  	}
  #if ENABLE_FEATURE_TELNETD_STANDALONE
  	else {
@@ -1921,7 +1973,7 @@ index eca4e51..f7214dd 100644
  		close_on_exec_on(master_fd);
  		ioloop_insert_conn(&G.io, (void *)new_accept_conn(master_fd));
  	}
-@@ -1730,25 +1470,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+@@ -1730,25 +1459,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
  		G.io.max_timeout = (UINT_MAX / 1000000);
  	G.io.max_timeout *= 1000000;
  #endif

@@ -2850,7 +2850,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
         os.close(r_fd)
         for chunk in chunks:
             os.write(w_fd, chunk)
-            time.sleep(0.10 if chunk.endswith(b"\x1b") else 0.02)
+            time.sleep(0.10 if chunk.endswith((b"\x1b", b"\x1b[24;80R")) else 0.02)
         os.close(w_fd)
         proc.wait(timeout=15.0)
         assert proc.returncode == 0

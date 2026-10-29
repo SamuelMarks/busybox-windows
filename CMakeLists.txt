@@ -94,7 +94,7 @@ if(NOT TARGET auto-win-msvc)
     FetchContent_Declare(
         auto_win_msvc
         GIT_REPOSITORY https://github.com/SamuelMarks/auto-win-msvc.git
-        GIT_TAG 3ade97d36fb17864fb8eb244748d053067ca0acc
+        GIT_TAG 46bf3de52b47254273e805dd94f692c707c0c82a
     )
     FetchContent_MakeAvailable(auto_win_msvc)
 endif()
