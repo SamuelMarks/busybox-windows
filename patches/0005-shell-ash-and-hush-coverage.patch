@@ -4976,6 +4976,18 @@ index f0ed000..c96ac49 100644
  		/* Use the remainder as a value for the next variable */
  		params->setvar(*argv, buffer);
  		/* Set the rest to "" */
+@@ -481,10 +372,10 @@ static const char limit_chars[] ALIGN1 =
+ ;
+ 
+ /* "-": treat args as parameters of option with ASCII code 1 */
+-static const char ulimit_opt_string[] ALIGN1 = "-HSa"
++static const char ulimit_opt_string[] ALIGN1 = "+HSa"
+ 			"c::"
+ 			"d::"
+ #ifdef RLIMIT_NICE
+ 			"e::"
+ #endif
+ 			"f::"
 @@ -534,18 +425,9 @@ enum {
  static void printlim(unsigned opts, const struct rlimit *limit,
  			const struct limits *l)
@@ -4998,31 +5010,7 @@ index f0ed000..c96ac49 100644
  }
  
  int FAST_FUNC
-@@ -564,7 +446,10 @@ shell_builtin_ulimit(char **argv)
- 	/* In case getopt() was already called:
- 	 * reset libc getopt() internal state.
- 	 */
--	GETOPT_RESET();
-+	optind = 1;
-+#ifdef __APPLE__
-+	optreset = 1;
-+#endif
- 
- // bash 4.4.23:
- //
-@@ -645,7 +530,10 @@ shell_builtin_ulimit(char **argv)
- 	}
- 
- 	/* Second pass: set or print limits, in order */
--	GETOPT_RESET();
-+	optind = 1;
-+#ifdef __APPLE__
-+	optreset = 1;
-+#endif
- 	while (1) {
- 		char *val_str;
- 		int opt_char = getopt(argc, argv, ulimit_opt_string);
-@@ -658,49 +546,28 @@ shell_builtin_ulimit(char **argv)
+@@ -658,49 +540,28 @@ shell_builtin_ulimit(char **argv)
  			continue;
  		//if (opt_char == 'a') - impossible
  

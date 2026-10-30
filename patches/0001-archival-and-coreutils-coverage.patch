@@ -11117,7 +11117,7 @@ index 8a9a90f..cfb8c80 100644
 -	opts = 0;
 -	/* '-' makes getopt return 1 for non-options */
 -	while ((i = getopt(argc, argv, "-d:lnotpqxjvK")) != -1) {
-+	while ((i = getopt(argc, argv, "d:lnopq")) != -1) {
++	while ((i = getopt(argc, argv, "+d:lnopq")) != -1) {
  		switch (i) {
 -		case 'd':  /* Extract to base directory */
 +		case 'd':
