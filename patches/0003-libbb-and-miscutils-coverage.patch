@@ -1236,12 +1236,12 @@ index d340945..ae13f36 100644
  				}
  			} else {
  				bcnt += p[-SCS_OFS];
-@@ -311,18 +308,12 @@ static NOINLINE void rewrite(priv_dumper_t *dumper, FS *fs)
+@@ -311,18 +308,13 @@ static NOINLINE void rewrite(priv_dumper_t *dumper, FS *fs)
  	for (fu = fs->nextfu; fu; fu = fu->nextfu) {
  		if (!fu->nextfu
  		 && fs->bcnt < dumper->blocksize
 -		 && !(fu->flags & F_SETREP)
--		 && fu->bcnt
+ 		 && fu->bcnt
  		) {
  			fu->reps += (dumper->blocksize - fs->bcnt) / fu->bcnt;
  		}
@@ -1257,7 +1257,7 @@ index d340945..ae13f36 100644
  			p2 = NULL;
  			for (p1 = pr->fmt; *p1; ++p1)
  				p2 = isspace(*p1) ? p1 : NULL;
-@@ -344,9 +335,7 @@ static void do_skip(priv_dumper_t *dumper, const char *fname)
+@@ -344,9 +336,7 @@ static void do_skip(priv_dumper_t *dumper, const char *fname)
  		dumper->pub.address += sbuf.st_size;
  		return;
  	}
@@ -1268,7 +1268,7 @@ index d340945..ae13f36 100644
  	dumper->pub.address += dumper->pub.dump_skip;
  	dumper->savaddress = dumper->pub.address;
  	dumper->pub.dump_skip = 0;
-@@ -359,7 +348,7 @@ static NOINLINE int next(priv_dumper_t *dumper)
+@@ -359,7 +349,7 @@ static NOINLINE int next(priv_dumper_t *dumper)
  
  		if (fname) {
  			dumper->argv++;
@@ -1277,7 +1277,7 @@ index d340945..ae13f36 100644
  				if (!freopen(fname, "r", stdin)) {
  					bb_simple_perror_msg(fname);
  					dumper->exitval = 1;
-@@ -373,7 +362,7 @@ static NOINLINE int next(priv_dumper_t *dumper)
+@@ -373,7 +363,7 @@ static NOINLINE int next(priv_dumper_t *dumper)
  		}
  		dumper->next__done = 1;
  		if (dumper->pub.dump_skip)
@@ -1286,7 +1286,7 @@ index d340945..ae13f36 100644
  		if (dumper->pub.dump_skip == 0)
  			return 1;
  	}
-@@ -409,24 +398,13 @@ static unsigned char *get(priv_dumper_t *dumper)
+@@ -409,24 +399,13 @@ static unsigned char *get(priv_dumper_t *dumper)
  			if (need == blocksize) {
  				return NULL;
  			}
@@ -1313,7 +1313,7 @@ index d340945..ae13f36 100644
  			dumper->get__ateof = 1;
  			continue;
  		}
-@@ -471,7 +449,7 @@ static void bpad(PR *pr)
+@@ -471,7 +450,7 @@ static void bpad(PR *pr)
  	*pr->cchar = 's';
  	for (p1 = pr->fmt; *p1 != '%'; ++p1)
  		continue;
@@ -1322,7 +1322,7 @@ index d340945..ae13f36 100644
  		if (pr->nospace)
  			pr->nospace--;
  	while ((*p2++ = *p1++) != '\0')
-@@ -484,7 +462,8 @@ static void conv_c(PR *pr, unsigned char *p)
+@@ -484,7 +463,8 @@ static void conv_c(PR *pr, unsigned char *p)
  	unsigned char ch;
  
  	ch = *p;
@@ -1332,7 +1332,7 @@ index d340945..ae13f36 100644
  		/* map chars 0,7..13 to "\0","\{a,b,t,n,v,f,r}" */
  		str = c_escape_conv_str00 + 3 * ch;
  		goto strpr;
-@@ -494,36 +473,9 @@ static void conv_c(PR *pr, unsigned char *p)
+@@ -494,36 +474,9 @@ static void conv_c(PR *pr, unsigned char *p)
  		*pr->cchar = 'c';
  		printf(pr->fmt, *p);
  	} else {
@@ -1369,7 +1369,7 @@ index d340945..ae13f36 100644
   strpr:
  		*pr->cchar = 's';
  		printf(pr->fmt, str);
-@@ -590,14 +542,6 @@ static NOINLINE void display(priv_dumper_t* dumper)
+@@ -590,14 +543,6 @@ static NOINLINE void display(priv_dumper_t* dumper)
  								fputs_stdout(dumper->pub.xxd_eofstring);
  								return;
  							}
@@ -1384,7 +1384,7 @@ index d340945..ae13f36 100644
  #endif
  							if (!(pr->flags & (F_TEXT | F_BPAD)))
  								bpad(pr);
-@@ -628,15 +572,12 @@ static NOINLINE void display(priv_dumper_t* dumper)
+@@ -628,15 +573,12 @@ static NOINLINE void display(priv_dumper_t* dumper)
  							double dval;
  							float fval;
  
@@ -1402,7 +1402,7 @@ index d340945..ae13f36 100644
  							}
  							break;
  						}
-@@ -648,20 +589,14 @@ static NOINLINE void display(priv_dumper_t* dumper)
+@@ -648,20 +590,14 @@ static NOINLINE void display(priv_dumper_t* dumper)
  							} u;
  							int value = (signed char)*bp;
  
@@ -1426,7 +1426,7 @@ index d340945..ae13f36 100644
  								printf(pr->fmt, (long long)u.ival64);
  								goto skip;
  							}
-@@ -681,24 +616,18 @@ static NOINLINE void display(priv_dumper_t* dumper)
+@@ -681,24 +617,18 @@ static NOINLINE void display(priv_dumper_t* dumper)
  						case F_U:
  							conv_u(pr, bp);
  							break;
@@ -1454,7 +1454,7 @@ index d340945..ae13f36 100644
  							}
  							printf(pr->fmt, value);
  							break;
-@@ -712,7 +641,6 @@ static NOINLINE void display(priv_dumper_t* dumper)
+@@ -712,7 +642,6 @@ static NOINLINE void display(priv_dumper_t* dumper)
  			}
  		}
  	}
@@ -1462,7 +1462,7 @@ index d340945..ae13f36 100644
  	if (dumper->endfu) {
  		PR *pr;
  		/*
-@@ -726,18 +654,11 @@ static NOINLINE void display(priv_dumper_t* dumper)
+@@ -726,18 +655,11 @@ static NOINLINE void display(priv_dumper_t* dumper)
  			dumper->eaddress = dumper->pub.address;
  		}
  		for (pr = dumper->endfu->nextpr; pr; pr = pr->nextpr) {
@@ -1484,7 +1484,7 @@ index d340945..ae13f36 100644
  		}
  	}
  }
-@@ -812,7 +733,7 @@ void FAST_FUNC bb_dump_add(dumper_t* pub_dumper, const char *fmt)
+@@ -812,7 +734,7 @@ void FAST_FUNC bb_dump_add(dumper_t* pub_dumper, const char *fmt)
  		if (isdigit(*p)) {
  			for (savep = p; isdigit(*p); ++p)
  				continue;

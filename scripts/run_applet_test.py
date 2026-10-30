@@ -2850,13 +2850,15 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
         os.close(r_fd)
         for chunk in chunks:
             os.write(w_fd, chunk)
-            time.sleep(0.10 if chunk.endswith((b"\x1b", b"\x1b[24;80R")) else 0.02)
+            time.sleep(
+                0.10 if chunk.endswith((b"\x1b", b"\x1b[24;80R", b"\x1b[9999;9999R")) else 0.02
+            )
         os.close(w_fd)
         proc.wait(timeout=15.0)
         assert proc.returncode == 0
 
     vi_chunks_1: tuple[bytes, ...] = (
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b"."  # '.' when lmc_len == 0
         b";,"  # dot_to_char when last_search_char == 0
         b"u"  # undo_pop when undo stack is empty ("Already at oldest change")
@@ -2954,7 +2956,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
 
     # Focused mini-test on vi_f2.txt (ends with "!", init_text_buffer adds \n)
     vi_mini: tuple[bytes, ...] = (
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b"0~3~u"  # ~ on lower/upper and undo
         b":set flash\rfZ:set noflash\r"  # flash(10) when err_method != 0
         b"0f_w0f_b1G0b"  # w and b starting on '_', b at text[0]
@@ -3015,7 +3017,8 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     _run_vi_piped(
         ["vi", "vi_scroll.txt"],
         (
-            b"\x1b[24;80R1G0Rabc\x08\x7f\x08\x08\x1b",
+            b"\x1b[24;80R",
+            b"1G0Rabc\x08\x7f\x08\x08\x1b",
             b"26G"  # 26 - 23 = 3 lines below end_scr (< 11) -> sync_cursor lines 861-870
             b"H20\x05"  # scroll forward 20 lines while dot is at H -> dot < screenbegin
             b"L20\x19"  # scroll backward 20 lines while dot is at L -> dot > end_screen()
@@ -3031,7 +3034,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
 
     # 2. Colon commands, address ranges, substitutions, read/write/next/prev/rewind
     vi_chunks_2: tuple[bytes, ...] = (
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b"ma"  # set mark 'a' for :'a
         b":\r"
         b': "comment\r'
@@ -3112,31 +3115,30 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
         b"iMOD\x1b",
         b":rew\r"  # modified -> refuses
         b":rew!\r"  # modified + useforce -> rewinds
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b":w!\r"
         b":x\r"  # unmodified :x with more files to edit -> refuses
         b":wq\r"  # refuses since more files to edit
         b":q\r"  # more files to edit -> refuses
         b":wn\r"  # writes and switches to next file (vi_f2)
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b"iMOD2\x1b",
         b":n!\r"  # useforce with *cmd == 'n' (advances to 3rd arg)
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b":n\r"  # *cmd == 'n' && n <= 0 -> "No more files to edit"
         b":prev\r"  # back to vi_f2
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b":prev\r"  # back to vi_f1
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b":prev\r"  # no previous files
         b":e % #\r"
         b":e \\%\r"
         b":rew!\r"
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b"ZZ"  # refuses since 2 more files to edit
         b":n\r"
-        b"\x1b[24;80R"
-        b":n\r"
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
+        b":n\r\x1b[24;80R",
         b"iEDIT\x1b",
         b"ZZ",  # modified_count != 0 on last file -> file_write and exit
     )
@@ -3145,12 +3147,13 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     # Test :wq! with remaining files and ZZ error path (directory/unwritable filename)
     _run_vi_piped(
         ["vi", "vi_f1.txt", "vi_f2.txt"],
-        (b"\x1b[24;80R:wq!\r",),
+        (b"\x1b[24;80R", b":wq!\r"),
     )
     _run_vi_piped(
         ["vi"],
         (
-            b"\x1b[24;80RiX\x1b",
+            b"\x1b[24;80R",
+            b"iX\x1b",
             b"ZZ",  # file_write(NULL) returns -2
             b":f /nonexistent_dir_xyz/file\rZZ",  # file_write returns -1
             b"ZQ",
@@ -3210,12 +3213,12 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     vi_ro.chmod(0o444)
     _run_vi_piped(
         ["vi", "-R", "vi_ro.txt"],
-        (b"\x1b[24;80RiX\x1b", b"ZZ:w\r:w!\r:w! vi_ro_out.txt\r:q!\r"),
+        (b"\x1b[24;80R", b"iX\x1b", b"ZZ:w\r:w!\r:w! vi_ro_out.txt\r:q!\r"),
     )
     vi_ro.chmod(0o644)
     # No filename buffer: test :w, :e, :r, :!%, :!#, empty buffer deletion, undo queue overflow
     no_fn_chunks: tuple[bytes, ...] = (
-        b"\x1b[24;80R"
+        b"\x1b[24;80R",
         b":s//x/\r"
         b"n"
         b":w\r"
