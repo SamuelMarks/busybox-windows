@@ -88,6 +88,9 @@ def test_render_autoconf_header_branches() -> None:
         string_defaults=strings,
     )
 
+    assert '#define CONFIG_BUSYBOX_EXEC_PATH "busybox.exe"' in header
+    assert '#define CONFIG_BUSYBOX_EXEC_PATH "/proc/self/exe"' in header
+
     assert "#define CONFIG_CAT 1" in header
     assert "#define ENABLE_CAT 1" in header
     assert "#define IF_CAT(...) __VA_ARGS__" in header
