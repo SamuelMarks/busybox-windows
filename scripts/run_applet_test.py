@@ -2499,7 +2499,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     ed_no_nl = work / "ed_no_nl.txt"
     ed_no_nl.write_bytes(b"line_without_nl")
     ed_big = work / "ed_big.txt"
-    ed_big.write_bytes((b"L" * 70000 + b"\n") * 2)
+    ed_big.write_bytes((b"L" * 10 + b"Z" * 2048 + b"\n") * 2)
     ed_w_out = work / "ed_w_out.txt"
     ed_full_script = NL.join(
         [

@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: SamuelMarks/auto-win-msvc
-          ref: 46bf3de52b47254273e805dd94f692c707c0c82a
+          ref: 6ff8525b2e0541fab3b792b78ce80cf055322787
           path: auto-win-msvc
 
       - name: Checkout busybox
@@ -80,7 +80,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: SamuelMarks/auto-win-msvc
-          ref: 46bf3de52b47254273e805dd94f692c707c0c82a
+          ref: 6ff8525b2e0541fab3b792b78ce80cf055322787
           path: auto-win-msvc
 
       - name: Checkout busybox
