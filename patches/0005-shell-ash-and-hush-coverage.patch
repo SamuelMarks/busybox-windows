@@ -5010,7 +5010,15 @@ index f0ed000..c96ac49 100644
  }
  
  int FAST_FUNC
-@@ -658,49 +540,28 @@ shell_builtin_ulimit(char **argv)
+@@ -607,6 +489,7 @@ shell_builtin_ulimit(char **argv)
+ 	 */
+ 	opt_cnt = 0;
+ 	opts = 0;
++	GETOPT_RESET();
+ 	while (1) {
+ 		int opt_char = getopt(argc, argv, ulimit_opt_string);
+ 
+@@ -658,49 +541,28 @@ shell_builtin_ulimit(char **argv)
  			continue;
  		//if (opt_char == 'a') - impossible
  
