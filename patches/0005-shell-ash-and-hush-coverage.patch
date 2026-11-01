@@ -221,23 +221,7 @@ index b8ff67b..feabc51 100644
  		if ((flags & (VEXPORT|VREADONLY|VSTRFIXED|VUNSET)) == VUNSET)
  			goto out_free;
  		vp = ckzalloc(sizeof(*vp));
-@@ -2719,15 +2644,11 @@ listvars(int on, int off, struct strlist *lp, char ***end)
- 
- #if ENABLE_FEATURE_SH_NOFORK
- 	while (lp) {
--		if (ep == stackstrend())
--			ep = growstackstr();
- 		*ep++ = lp->text;
- 		lp = lp->next;
- 	}
- #endif
- 
--	if (ep == stackstrend())
--		ep = growstackstr();
- 	if (end)
- 		*end = ep;
- 	*ep++ = NULL;
-@@ -2737,26 +2658,9 @@ listvars(int on, int off, struct strlist *lp, char ***end)
+@@ -2737,26 +2662,9 @@ listvars(int on, int off, struct strlist *lp, char ***end)
  
  /* ============ Path search helper */
  static const char *

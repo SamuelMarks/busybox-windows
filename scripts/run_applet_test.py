@@ -2984,7 +2984,7 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
         b":l\r"  # :l on line with 0x7f and 0x9b
         b"\x9b\x7f"  # not_implemented -> print_literal with 0x9b and 0x7f
         b"1G<<$j"  # << on space-indented line, $j with cindex == C_END
-        b"2G0X"  # X at BOL (dot[-1] == '\n')
+        b"2G0X",  # X at BOL (dot[-1] == '\n')
         b"1G0i\t\x1b",  # insert tab at BOL
         b"1G0ix",  # enter insert mode before tab for refresh(FALSE) (tp == d - 1 && *d == '\t')
         b"\x1b",
@@ -3136,9 +3136,10 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
         b":rew!\r"
         b"\x1b[24;80R",
         b"ZZ"  # refuses since 2 more files to edit
-        b":n\r"
+        b":n\r",
         b"\x1b[24;80R",
-        b":n\r\x1b[24;80R",
+        b":n\r",
+        b"\x1b[24;80R",
         b"iEDIT\x1b",
         b"ZZ",  # modified_count != 0 on last file -> file_write and exit
     )
@@ -3193,11 +3194,11 @@ def run_editors_and_find_suite(busybox: Path, work: Path) -> None:
     )
     os.close(r_sig)
     os.write(w_sig, b"\x1b[24;80R")
-    time.sleep(0.06)
+    time.sleep(0.10)
     sig_proc.send_signal(_SIGWINCH)
     time.sleep(0.03)
     os.write(w_sig, b"\x1b[24;80R")
-    time.sleep(0.04)
+    time.sleep(0.10)
     sig_proc.send_signal(signal.SIGINT)
     time.sleep(0.04)
     os.write(w_sig, b"ZQ")
@@ -6057,6 +6058,10 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
                 "export EX_A='val_a' EX_SQ=\"'single'mid'end'\" EX_SP='a b!;#`[\\~'; "
                 "export EX_A; export EX_EMPTY; "
                 "EX_A=temp_val echo >/dev/null; "
+                "for lv_i in $(seq 1 65); do "
+                "  export LV_GROW_$lv_i=$lv_i; "
+                "  LV_T1=1 LV_T2=2 [ -O . ] || true; "
+                "done; "
                 "export >/dev/null; export -p >/dev/null; "
                 "export -n EX_A=unexp_val EX_A EX_NONEXIST 2>/dev/null || true; "
                 "(export '1bad=1') 2>/dev/null || true; (export -z) 2>/dev/null || true; "
