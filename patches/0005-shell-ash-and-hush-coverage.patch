@@ -1,5 +1,5 @@
 diff --git a/shell/ash.c b/shell/ash.c
-index b8ff67b..feabc51 100644
+index b8ff67b..1b7ab66 100644
 --- a/shell/ash.c
 +++ b/shell/ash.c
 @@ -649,9 +649,7 @@ static void trace_vprintf(const char *fmt, va_list va);
@@ -250,7 +250,7 @@ index b8ff67b..feabc51 100644
  }
  
  /*
-@@ -2803,11 +2707,8 @@ padvance_magic(const char **path, const char *name, int magic)
+@@ -2803,11 +2711,8 @@ padvance_magic(const char **path, const char *name, int magic)
  	if (*p == '%') {
  		size_t extra = strchrnul(p, ':') - p;
  
@@ -264,7 +264,7 @@ index b8ff67b..feabc51 100644
  		p += extra;
  	}
  
-@@ -2886,16 +2787,7 @@ setprompt_if(smallint do_set, int whichprompt)
+@@ -2886,16 +2791,7 @@ setprompt_if(smallint do_set, int whichprompt)
  
  	needprompt = 0;
  
@@ -282,7 +282,7 @@ index b8ff67b..feabc51 100644
  #if ENABLE_ASH_EXPAND_PRMT
  	pushstackmark(&smark, stackblocksize());
  	putprompt(expandstr(prompt, PSSYNTAX));
-@@ -2943,8 +2835,6 @@ updatepwd(const char *dir)
+@@ -2943,8 +2839,6 @@ updatepwd(const char *dir)
  	cdcomppath = sstrdup(dir);
  	STARTSTACKSTR(new);
  	if (*dir != '/') {
@@ -291,7 +291,7 @@ index b8ff67b..feabc51 100644
  		new = stack_putstr(curdir, new);
  	}
  	new = makestrspace(strlen(dir) + 2, new);
-@@ -2952,8 +2842,6 @@ updatepwd(const char *dir)
+@@ -2952,8 +2846,6 @@ updatepwd(const char *dir)
  	if (*dir != '/') {
  		if (new[-1] != '/')
  			USTPUTC('/', new);
@@ -300,7 +300,7 @@ index b8ff67b..feabc51 100644
  	} else {
  		USTPUTC('/', new);
  		cdcomppath++;
-@@ -2997,8 +2885,7 @@ updatepwd(const char *dir)
+@@ -2997,8 +2889,7 @@ updatepwd(const char *dir)
  static char *
  getpwd(void)
  {
@@ -310,7 +310,7 @@ index b8ff67b..feabc51 100644
  }
  
  static void
-@@ -3013,8 +2900,6 @@ setpwd(const char *val, int setold)
+@@ -3013,8 +2904,6 @@ setpwd(const char *val, int setold)
  	}
  	INTOFF;
  	if (physdir != nullstr) {
@@ -319,7 +319,7 @@ index b8ff67b..feabc51 100644
  		physdir = nullstr;
  	}
  	if (oldcur == val || !val) {
-@@ -3130,11 +3015,7 @@ SIT(int c, int syntax)
+@@ -3130,11 +3019,7 @@ SIT(int c, int syntax)
  		return CENDFILE;
  	/* Cast is purely for paranoia here,
  	 * just in case someone passed signed char to us */
@@ -332,7 +332,7 @@ index b8ff67b..feabc51 100644
  	s = strchrnul(spec_symbls, c);
  	if (*s == '\0')
  		return CWORD;
-@@ -3474,13 +3355,9 @@ __lookupalias(const char *name)
+@@ -3474,13 +3359,9 @@ __lookupalias(const char *name)
  }
  
  static struct alias *
@@ -348,7 +348,7 @@ index b8ff67b..feabc51 100644
  }
  
  static struct alias *
-@@ -3488,11 +3365,6 @@ freealias(struct alias *ap)
+@@ -3488,11 +3369,6 @@ freealias(struct alias *ap)
  {
  	struct alias *next;
  
@@ -360,7 +360,7 @@ index b8ff67b..feabc51 100644
  	next = ap->next;
  	free(ap->name);
  	free(ap->val);
-@@ -3554,9 +3426,6 @@ rmaliases(void)
+@@ -3554,9 +3430,6 @@ rmaliases(void)
  		app = &atab[i];
  		for (ap = *app; ap; ap = *app) {
  			*app = freealias(*app);
@@ -370,7 +370,7 @@ index b8ff67b..feabc51 100644
  		}
  	}
  	INTON;
-@@ -3653,31 +3522,15 @@ ignoresig(int signo)
+@@ -3653,31 +3526,15 @@ ignoresig(int signo)
  static void
  signal_handler(int signo)
  {
@@ -403,7 +403,7 @@ index b8ff67b..feabc51 100644
  }
  
  /*
-@@ -3750,21 +3603,7 @@ setsignal(int signo)
+@@ -3750,21 +3607,7 @@ setsignal(int signo)
  	cur_act = *t;
  	if (cur_act == 0) {
  		/* current setting is not yet known */
@@ -426,7 +426,7 @@ index b8ff67b..feabc51 100644
  		if (act.sa_handler == SIG_DFL && new_act == S_DFL) {
  			/* installing SIG_DFL over SIG_DFL is a no-op */
  			/* saves one sigaction call in each "sh -c SCRIPT" invocation */
-@@ -3947,34 +3786,9 @@ set_curjob(struct job *jp, unsigned mode)
+@@ -3947,34 +3790,9 @@ set_curjob(struct job *jp, unsigned mode)
  
  	/* Then re-insert in correct position */
  	jpp = curp;
@@ -462,7 +462,7 @@ index b8ff67b..feabc51 100644
  	}
  }
  
-@@ -4004,12 +3818,6 @@ getjob(const char *name, int getctl)
+@@ -4004,12 +3822,6 @@ getjob(const char *name, int getctl)
  
  	jp = curjob;
  	p = name;
@@ -475,7 +475,7 @@ index b8ff67b..feabc51 100644
  	c = *++p;
  	if (!c)
  		goto currentjob;
-@@ -4041,22 +3849,8 @@ getjob(const char *name, int getctl)
+@@ -4041,22 +3853,8 @@ getjob(const char *name, int getctl)
  		}
  	}
  
@@ -500,7 +500,7 @@ index b8ff67b..feabc51 100644
  
   gotit:
  #if JOBS
-@@ -4079,10 +3873,8 @@ freejob(struct job *jp)
+@@ -4079,10 +3877,8 @@ freejob(struct job *jp)
  	int i;
  
  	INTOFF;
@@ -513,7 +513,7 @@ index b8ff67b..feabc51 100644
  	if (jp->ps != &jp->ps0)
  		free(jp->ps);
  	jp->used = 0;
-@@ -4261,24 +4053,10 @@ sprint_status48(char *os, int status, int sigonly)
+@@ -4261,24 +4057,10 @@ sprint_status48(char *os, int status, int sigonly)
  		else
  #endif
  			st = WTERMSIG(status);
@@ -539,7 +539,7 @@ index b8ff67b..feabc51 100644
  	return s - os;
  }
  
-@@ -4824,11 +4602,7 @@ waitcmd(int argc UNUSED_PARAM, char **argv)
+@@ -4824,11 +4606,7 @@ waitcmd(int argc UNUSED_PARAM, char **argv)
  		/* wait for all jobs / one job if -n */
  		for (;;) {
  			jp = curjob;
@@ -552,7 +552,7 @@ index b8ff67b..feabc51 100644
  			while (1) {
  				if (!jp) /* no running procs */
  					goto ret;
-@@ -4855,20 +4629,7 @@ waitcmd(int argc UNUSED_PARAM, char **argv)
+@@ -4855,20 +4633,7 @@ waitcmd(int argc UNUSED_PARAM, char **argv)
  			 */
  			if (pending_sig)
  				goto sigout;
@@ -574,7 +574,7 @@ index b8ff67b..feabc51 100644
  		}
  	}
  
-@@ -4889,8 +4650,6 @@ waitcmd(int argc UNUSED_PARAM, char **argv)
+@@ -4889,8 +4654,6 @@ waitcmd(int argc UNUSED_PARAM, char **argv)
  		}
  		/* loop until process terminated or stopped */
  		dowait(DOWAIT_CHILD_OR_SIG, job);
@@ -583,7 +583,7 @@ index b8ff67b..feabc51 100644
  		job->waited = 1;
  		retval = getstatus(job);
   repeat: ;
-@@ -5435,16 +5194,6 @@ forkchild(struct job *jp, union node *n, int mode)
+@@ -5435,16 +5198,6 @@ forkchild(struct job *jp, union node *n, int mode)
  		}
  	}
  	if (oldlvl == 0) {
@@ -600,7 +600,7 @@ index b8ff67b..feabc51 100644
  		setsignal(SIGQUIT);
  	}
  #if JOBS
-@@ -5477,13 +5226,7 @@ forkchild(struct job *jp, union node *n, int mode)
+@@ -5477,13 +5230,7 @@ forkchild(struct job *jp, union node *n, int mode)
  static void
  forkparent(struct job *jp, union node *n, int mode, pid_t pid)
  {
@@ -615,7 +615,7 @@ index b8ff67b..feabc51 100644
  
  	TRACE(("In parent shell:  child = %d\n", pid));
  	if (!jp) /* jp is NULL when called by openhere() for heredoc support */
-@@ -5581,8 +5324,7 @@ openhere(union node *redir)
+@@ -5581,8 +5328,7 @@ openhere(union node *redir)
  	char *p;
  	int pip[2];
  
@@ -625,7 +625,7 @@ index b8ff67b..feabc51 100644
  
  	p = redir->nhere.doc->narg.text;
  	if (redir->type == NXHERE) {
-@@ -5599,8 +5341,7 @@ openherestr(char *str)
+@@ -5599,8 +5345,7 @@ openherestr(char *str)
  	int pip[2];
  	size_t len;
  
@@ -635,7 +635,7 @@ index b8ff67b..feabc51 100644
  
  	len = strlen(str);
  	str[len] = '\n';
-@@ -5645,13 +5386,10 @@ openredirect(union node *redir)
+@@ -5645,13 +5390,10 @@ openredirect(union node *redir)
  				goto ecreate;
  
  			f = sh_open(fname, O_WRONLY, 0);
@@ -650,7 +650,7 @@ index b8ff67b..feabc51 100644
  	case NCLOBBER:
  		flags = O_WRONLY|O_CREAT|O_TRUNC;
  		goto do_open;
-@@ -5662,11 +5400,6 @@ openredirect(union node *redir)
+@@ -5662,11 +5404,6 @@ openredirect(union node *redir)
  //	case NTOFD:
  //	case NFROMFD:
  //		return -1;
@@ -662,7 +662,7 @@ index b8ff67b..feabc51 100644
  	case NHERE:
  	case NXHERE:
  		f = openhere(redir);
-@@ -5687,15 +5420,9 @@ savefd(int from)
+@@ -5687,15 +5424,9 @@ savefd(int from)
  	int newfd;
  	int err;
  
@@ -680,7 +680,7 @@ index b8ff67b..feabc51 100644
  
  	return newfd;
  }
-@@ -5704,7 +5431,7 @@ dup2_or_raise(int from, int to)
+@@ -5704,7 +5435,7 @@ dup2_or_raise(int from, int to)
  {
  	int newfd;
  
@@ -689,7 +689,7 @@ index b8ff67b..feabc51 100644
  	if (newfd < 0) {
  		/* Happens when source fd is not open: try "echo >&99" */
  		ash_msg_and_raise_perror("dup2(%d,%d)", from, to);
-@@ -5720,45 +5447,13 @@ dup_CLOEXEC(int fd, int avoid_fd)
+@@ -5720,45 +5451,13 @@ dup_CLOEXEC(int fd, int avoid_fd)
  	int newfd;
   repeat:
  	newfd = fcntl(fd, F_DUPFD_CLOEXEC, avoid_fd + 1);
@@ -737,7 +737,7 @@ index b8ff67b..feabc51 100644
  	close(fd);
  	return newfd;
  }
-@@ -5780,9 +5475,6 @@ add_squirrel_closed(struct redirtab *sq, int fd)
+@@ -5780,9 +5479,6 @@ add_squirrel_closed(struct redirtab *sq, int fd)
  {
  	int i;
  
@@ -747,7 +747,7 @@ index b8ff67b..feabc51 100644
  	for (i = 0; sq->two_fd[i].orig_fd != EMPTY; i++) {
  		/* If we collide with an already moved fd... */
  		if (fd == sq->two_fd[i].orig_fd) {
-@@ -5853,8 +5545,6 @@ save_fd_on_redirect(int fd, int avoid_fd, struct redirtab *sq)
+@@ -5853,8 +5549,6 @@ save_fd_on_redirect(int fd, int avoid_fd, struct redirtab *sq)
  			new_fd = dup_CLOEXEC(fd, avoid_fd);
  			sq->two_fd[i].moved_to = new_fd;
  			TRACE(("redirect_fd %d: already busy, moving to %d\n", fd, new_fd));
@@ -756,7 +756,7 @@ index b8ff67b..feabc51 100644
  			return 0; /* "we did not close fd" */
  		}
  		if (fd == sq->two_fd[i].orig_fd) {
-@@ -5889,20 +5579,9 @@ internally_opened_fd(int fd, struct redirtab *sq)
+@@ -5889,20 +5583,9 @@ internally_opened_fd(int fd, struct redirtab *sq)
  	if (fd == ttyfd)
  		return 1;
  #endif
@@ -780,7 +780,7 @@ index b8ff67b..feabc51 100644
  	return 0;
  }
  
-@@ -5968,11 +5647,7 @@ redirect(union node *redir, int flags)
+@@ -5968,11 +5651,7 @@ redirect(union node *redir, int flags)
  				close(fd);
  			}
  		} else {
@@ -793,7 +793,7 @@ index b8ff67b..feabc51 100644
  			dup2_or_raise(newfd, fd);
  			if (close_fd >= 0) /* "N>FILE" or ">&FILE" or heredoc? */
  				close(close_fd);
-@@ -6004,8 +5679,6 @@ restore_handler_expandarg(struct jmploc *savehandler, int err)
+@@ -6004,8 +5683,6 @@ restore_handler_expandarg(struct jmploc *savehandler, int err)
  {
  	exception_handler = savehandler;
  	if (err) {
@@ -802,7 +802,7 @@ index b8ff67b..feabc51 100644
  		ifsfree();
  	}
  }
-@@ -6082,8 +5755,6 @@ popredir(int drop)
+@@ -6082,8 +5759,6 @@ popredir(int drop)
  	struct redirtab *rp;
  	int i;
  
@@ -811,7 +811,7 @@ index b8ff67b..feabc51 100644
  	INTOFF;
  	rp = redirlist;
  	for (i = 0; i < rp->pair_count; i++) {
-@@ -6120,63 +5791,10 @@ unwindredir(struct redirtab *stop)
+@@ -6120,63 +5795,10 @@ unwindredir(struct redirtab *stop)
   */
  #if ENABLE_FEATURE_SH_STANDALONE
  static void
@@ -877,7 +877,7 @@ index b8ff67b..feabc51 100644
  }
  #endif
  
-@@ -6244,15 +5862,10 @@ static void shellexec(char *prog, char **argv, const char *path, int idx)
+@@ -6244,15 +5866,10 @@ static void shellexec(char *prog, char **argv, const char *path, int idx)
  		 * Maybe /proc/self/exe doesn't exist?
  		 */
  #endif
@@ -896,7 +896,7 @@ index b8ff67b..feabc51 100644
  	}
  
  	/* Map to POSIX errors */
-@@ -6444,8 +6057,6 @@ ifsbreakup(char *string, struct arglist *arglist)
+@@ -6444,8 +6061,6 @@ ifsbreakup(char *string, struct arglist *arglist)
  			ifsspc = 0;
  			while (p < string + ifsp->endoff) {
  				q = p;
@@ -905,7 +905,7 @@ index b8ff67b..feabc51 100644
  				if (!strchr(ifs, *p)) {
  					p++;
  					continue;
-@@ -6470,8 +6081,6 @@ ifsbreakup(char *string, struct arglist *arglist)
+@@ -6470,8 +6085,6 @@ ifsbreakup(char *string, struct arglist *arglist)
  							break;
  						}
  						q = p;
@@ -914,7 +914,7 @@ index b8ff67b..feabc51 100644
  						if (strchr(ifs, *p) == NULL) {
  							p = q;
  							break;
-@@ -6571,10 +6180,8 @@ rmescapes(char *str, int flag, int *slash_position)
+@@ -6571,10 +6184,8 @@ rmescapes(char *str, int flag, int *slash_position)
  			/* p and str may be invalidated by makestrspace */
  			str = (char *)stackblock() + strloc;
  			p = str + len;
@@ -926,7 +926,7 @@ index b8ff67b..feabc51 100644
  		}
  		q = r;
  		if (len > 0) {
-@@ -6592,11 +6199,7 @@ rmescapes(char *str, int flag, int *slash_position)
+@@ -6592,11 +6203,7 @@ rmescapes(char *str, int flag, int *slash_position)
  			protect_against_glob = globbing;
  			continue;
  		}
@@ -939,7 +939,7 @@ index b8ff67b..feabc51 100644
  		if ((unsigned char)*p == CTLESC) {
  			p++;
  #if DEBUG
-@@ -6633,14 +6236,7 @@ rmescapes(char *str, int flag, int *slash_position)
+@@ -6633,14 +6240,7 @@ rmescapes(char *str, int flag, int *slash_position)
  				}
  			}
  		}
@@ -955,7 +955,7 @@ index b8ff67b..feabc51 100644
  		protect_against_glob = globbing;
   copy:
  		*q++ = *p++;
-@@ -6692,8 +6288,7 @@ memtodest(const char *p, size_t len, int flags)
+@@ -6692,8 +6292,7 @@ memtodest(const char *p, size_t len, int flags)
  					USTPUTC(CTLESC, q);
  				}
  			}
@@ -965,7 +965,7 @@ index b8ff67b..feabc51 100644
  		USTPUTC(c, q);
  	} while (--len);
  
-@@ -6756,36 +6351,13 @@ removerecordregions(int endoff)
+@@ -6756,36 +6355,13 @@ removerecordregions(int endoff)
  		return;
  
  	if (ifsfirst.endoff > endoff) {
@@ -1003,7 +1003,7 @@ index b8ff67b..feabc51 100644
  }
  
  static char *
-@@ -6816,8 +6388,6 @@ exptilde(char *startp, int flag)
+@@ -6816,8 +6392,6 @@ exptilde(char *startp, int flag)
  		}
  	}
   done:
@@ -1012,7 +1012,7 @@ index b8ff67b..feabc51 100644
  	*p = '\0';
  	if (*name == '\0') {
  		home = lookupvar("HOME");
-@@ -6891,8 +6461,7 @@ evalbackcmd(union node *n, struct backcmd *result
+@@ -6891,8 +6465,7 @@ evalbackcmd(union node *n, struct backcmd *result
  		goto out;
  	}
  
@@ -1022,7 +1022,7 @@ index b8ff67b..feabc51 100644
  	/* process substitution uses NULL job, like openhere() */
  	jp = (ctl == CTLBACKQ) ? makejob(1) : NULL;
  	if (forkshell(jp, n, FORK_NOJOB) == 0) {
-@@ -6956,9 +6525,6 @@ expbackq(union node *cmd, int flag IF_BASH_PROCESS_SUBST(, int ctl))
+@@ -6956,9 +6529,6 @@ expbackq(union node *cmd, int flag IF_BASH_PROCESS_SUBST(, int ctl))
  	int startloc;
  	struct stackmark smark;
  
@@ -1032,7 +1032,7 @@ index b8ff67b..feabc51 100644
  	INTOFF;
  	startloc = expdest - (char *)stackblock();
  	pushstackmark(&smark, startloc);
-@@ -6973,8 +6539,7 @@ expbackq(union node *cmd, int flag IF_BASH_PROCESS_SUBST(, int ctl))
+@@ -6973,8 +6543,7 @@ expbackq(union node *cmd, int flag IF_BASH_PROCESS_SUBST(, int ctl))
  
  	p = in.buf;
  	i = in.nleft;
@@ -1042,7 +1042,7 @@ index b8ff67b..feabc51 100644
  	for (;;) {
  		memtodest(p, i, flag);
   read:
-@@ -7034,9 +6599,6 @@ expari(char *start, int flag)
+@@ -7034,9 +6603,6 @@ expari(char *start, int flag)
  	begoff = expdest - p;
  	p = argstr(start, flag & EXP_DISCARD);
  
@@ -1052,7 +1052,7 @@ index b8ff67b..feabc51 100644
  	start = stackblock();
  	endoff = expdest - start;
  	start += begoff;
-@@ -7364,10 +6926,6 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7364,10 +6930,6 @@ subevalvar(char *start, char *str, int strloc,
  		if (*repl == '/')
  			repl++;
  		for (;;) {
@@ -1063,7 +1063,7 @@ index b8ff67b..feabc51 100644
  			/* Skip over quoted 'str'. Example: ${var/'/'} - second / is not a separator */
  			if ((unsigned char)*repl == CTLQUOTEMARK) {
  				while ((unsigned char)*++repl != CTLQUOTEMARK)
-@@ -7456,17 +7014,12 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7456,17 +7018,12 @@ subevalvar(char *start, char *str, int strloc,
  			}
  		}
  		orig_len = len;
@@ -1086,7 +1086,7 @@ index b8ff67b..feabc51 100644
  		if (pos < 0) {
  			/* ${VAR:$((-n)):l} starts n chars from the end */
  			pos = orig_len + pos;
-@@ -7486,25 +7039,13 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7486,25 +7043,13 @@ subevalvar(char *start, char *str, int strloc,
  		if ((unsigned)len > (orig_len - pos))
  			len = orig_len - pos;
  
@@ -1118,7 +1118,7 @@ index b8ff67b..feabc51 100644
  		}
  		*loc = '\0';
  		goto out;
-@@ -7552,7 +7093,7 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7552,7 +7097,7 @@ subevalvar(char *start, char *str, int strloc,
  	 */
  	//bb_error_msg("str8:'%s' slash_pos:%d", str, slash_pos);
  	rmescapes(str, RMESCAPE_GLOB,
@@ -1127,7 +1127,7 @@ index b8ff67b..feabc51 100644
  	);
  
  #if BASH_PATTERN_SUBST
-@@ -7600,9 +7141,7 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7600,9 +7145,7 @@ subevalvar(char *start, char *str, int strloc,
  				if (strncmp(rmesc, str + first_escaped, no_meta_len - first_escaped) != 0)
  					goto no_match;
  				loc = idx;
@@ -1138,7 +1138,7 @@ index b8ff67b..feabc51 100644
  					size_t n = no_meta_len - first_escaped;
  					do {
  						if ((unsigned char)*loc == CTLESC)
-@@ -7620,15 +7159,12 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7620,15 +7163,12 @@ subevalvar(char *start, char *str, int strloc,
   skip_matching:
  				if (idx >= end)
  					break;
@@ -1155,7 +1155,7 @@ index b8ff67b..feabc51 100644
  				}
  				idx++;
  				len++;
-@@ -7645,8 +7181,6 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7645,8 +7185,6 @@ subevalvar(char *start, char *str, int strloc,
  
  			if (subtype == VSREPLACEALL) {
  				while (idx < loc) {
@@ -1164,7 +1164,7 @@ index b8ff67b..feabc51 100644
  					idx++;
  					rmesc++;
  				}
-@@ -7663,26 +7197,18 @@ subevalvar(char *start, char *str, int strloc,
+@@ -7663,26 +7201,18 @@ subevalvar(char *start, char *str, int strloc,
  
  			//bb_error_msg("repl:'%s'", repl);
  			for (loc = (char*)repl; *loc; loc++) {
@@ -1191,7 +1191,7 @@ index b8ff67b..feabc51 100644
  					len++;
  					idx++;
  				}
-@@ -7759,9 +7285,6 @@ varvalue(char *name, int varflags, int flags, int quoted)
+@@ -7759,9 +7289,6 @@ varvalue(char *name, int varflags, int flags, int quoted)
  	int discard = (subtype == VSPLUS || subtype == VSLENGTH) | (flags & EXP_DISCARD);
  
  	if (!subtype) {
@@ -1201,7 +1201,7 @@ index b8ff67b..feabc51 100644
  		ifsfree();
  		raise_error_syntax("bad substitution");
  	}
-@@ -7831,8 +7354,6 @@ varvalue(char *name, int varflags, int flags, int quoted)
+@@ -7831,8 +7358,6 @@ varvalue(char *name, int varflags, int flags, int quoted)
   param:
  		sepc = sep;
  		ap = shellparam.p;
@@ -1210,7 +1210,7 @@ index b8ff67b..feabc51 100644
  		while ((p = *ap++) != NULL) {
  			len += strtodest(p, flags);
  
-@@ -7943,8 +7464,6 @@ evalvar(char *p, int flag)
+@@ -7943,8 +7468,6 @@ evalvar(char *p, int flag)
  
  	if (subtype == VSLENGTH) {
  		p++;
@@ -1219,7 +1219,7 @@ index b8ff67b..feabc51 100644
  		cvtnum(varlen > 0 ? varlen : 0, flag);
  		goto really_record;
  	}
-@@ -8031,15 +7550,11 @@ hasmeta(const char *p)
+@@ -8031,15 +7554,11 @@ hasmeta(const char *p)
  					break;
  				if ((unsigned char)*p == CTLESC)
  					p++;
@@ -1235,7 +1235,7 @@ index b8ff67b..feabc51 100644
  			break;
  		case '[':
  			if (!strchr(p + 1, ']')) {
-@@ -8182,8 +7697,6 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
+@@ -8182,8 +7701,6 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
  			for (;;) {
  				if (*q == '\\')
  					q++;
@@ -1244,7 +1244,7 @@ index b8ff67b..feabc51 100644
  				if (*++q == ']') {
  					metaflag = 1;
  					break;
-@@ -8199,19 +7712,8 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
+@@ -8199,19 +7716,8 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
  			}
  		}
  	}
@@ -1266,7 +1266,7 @@ index b8ff67b..feabc51 100644
  	endname = p;
  	if (name < start) {
  		p = name;
-@@ -8239,8 +7741,6 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
+@@ -8239,8 +7745,6 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
  	name_len -= endname - name;
  	matchdot = 0;
  	p = start;
@@ -1275,7 +1275,7 @@ index b8ff67b..feabc51 100644
  	if (*p == '.')
  		matchdot++;
  	while (!pending_int && (dp = readdir(dirp)) != NULL) {
-@@ -8258,13 +7758,6 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
+@@ -8258,13 +7762,6 @@ expmeta(exp_t *exp, char *name, unsigned name_len, unsigned expdir_len)
  				*p = '/';
  
  				offset = p - expdir + 1;
@@ -1289,7 +1289,7 @@ index b8ff67b..feabc51 100644
  				expmeta(exp, endname, name_len, offset);
  				enddir = expdir + expdir_len;
  			}
-@@ -8710,28 +8203,13 @@ test_exec(/*const char *fullname,*/ struct stat *statb)
+@@ -8710,28 +8207,13 @@ test_exec(/*const char *fullname,*/ struct stat *statb)
  	uid_t euid;
  	enum { ANY_IX = S_IXUSR | S_IXGRP | S_IXOTH };
  
@@ -1322,7 +1322,7 @@ index b8ff67b..feabc51 100644
  }
  
  /* Circular dep: find_command->find_builtin->builtintab[]->hashcmd->find_command */
-@@ -8760,74 +8238,26 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
+@@ -8760,74 +8242,26 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
  	int len;
  
  	/* If name contains a slash, don't use PATH or hash table */
@@ -1403,7 +1403,7 @@ index b8ff67b..feabc51 100644
  
  	if (act & DO_REGBLTIN)
  		goto fail;
-@@ -8842,16 +8272,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
+@@ -8842,16 +8276,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
  		}
  	}
  #endif
@@ -1420,7 +1420,7 @@ index b8ff67b..feabc51 100644
  	e = ENOENT;
  	idx = -1;
   loop:
-@@ -8860,39 +8280,14 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
+@@ -8860,39 +8284,14 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
  
  		fullname = stackblock();
  		idx++;
@@ -1463,7 +1463,7 @@ index b8ff67b..feabc51 100644
  			readcmdfile(fullname);
  			cmdp = cmdlookup(name, 0);
  			if (cmdp == NULL || cmdp->cmdtype != CMDFUNCTION)
-@@ -8904,11 +8299,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
+@@ -8904,11 +8303,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
  		if (!test_exec(/*fullname,*/ &statb))
  			continue;
  		TRACE(("searchexec \"%s\" returns \"%s\"\n", name, fullname));
@@ -1475,7 +1475,7 @@ index b8ff67b..feabc51 100644
  		INTOFF;
  		cmdp = cmdlookup(name, 1);
  		cmdp->cmdtype = CMDNORMAL;
-@@ -8916,10 +8306,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
+@@ -8916,10 +8310,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
  		INTON;
  		goto success;
  	}
@@ -1486,7 +1486,7 @@ index b8ff67b..feabc51 100644
  	if (act & DO_ERR) {
  #if ENABLE_ASH_BASH_NOT_FOUND_HOOK
  		struct tblentry *hookp = cmdlookup("command_not_found_handle", 0);
-@@ -8940,11 +8326,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
+@@ -8940,11 +8330,6 @@ find_command(char *name, struct cmdentry *entry, int act, const char *path)
  	return;
  
   builtin_success:
@@ -1498,7 +1498,7 @@ index b8ff67b..feabc51 100644
  	INTOFF;
  	cmdp = cmdlookup(name, 1);
  	cmdp->cmdtype = CMDBUILTIN;
-@@ -9117,7 +8498,7 @@ describe_command(char *command, const char *path, int describe_command_verbose)
+@@ -9117,7 +8502,7 @@ describe_command(char *command, const char *path, int describe_command_verbose)
  	}
  #endif
  	/* Brute force */
@@ -1507,7 +1507,7 @@ index b8ff67b..feabc51 100644
  	find_command(command, &entry, DO_ABS, path);
  
  	switch (entry.cmdtype) {
-@@ -9151,10 +8532,7 @@ describe_command(char *command, const char *path, int describe_command_verbose)
+@@ -9151,10 +8536,7 @@ describe_command(char *command, const char *path, int describe_command_verbose)
  
  	case CMDBUILTIN:
  		if (describe_command_verbose) {
@@ -1519,7 +1519,7 @@ index b8ff67b..feabc51 100644
  		} else {
  			out1str(command);
  		}
-@@ -9195,11 +8573,9 @@ fill_arglist(struct arglist *arglist, union node **argpp)
+@@ -9195,11 +8577,9 @@ fill_arglist(struct arglist *arglist, union node **argpp)
  	struct strlist **lastp = arglist->lastp;
  	union node *argp;
  
@@ -1532,7 +1532,7 @@ index b8ff67b..feabc51 100644
  	}
  
  	return *lastp;
-@@ -9627,21 +9003,9 @@ dotrap(void)
+@@ -9627,21 +9007,9 @@ dotrap(void)
  		if (!*g)
  			continue;
  
@@ -1554,7 +1554,7 @@ index b8ff67b..feabc51 100644
  		trap_depth++;
  		evalstring(p, 0);
  		trap_depth--;
-@@ -9689,17 +9053,9 @@ evaltree(union node *n, int flags)
+@@ -9689,17 +9057,9 @@ evaltree(union node *n, int flags)
  
  	dotrap();
  
@@ -1574,7 +1574,7 @@ index b8ff67b..feabc51 100644
  		errlinno = lineno = n->nredir.linno;
  		expredir(n->nredir.redirect);
  		pushredir(n->nredir.redirect);
-@@ -9709,72 +9065,53 @@ evaltree(union node *n, int flags)
+@@ -9709,72 +9069,53 @@ evaltree(union node *n, int flags)
  		}
  		if (n->nredir.redirect)
  			popredir(/*drop:*/ 0);
@@ -1672,7 +1672,7 @@ index b8ff67b..feabc51 100644
  	}
  
  	exitstatus = status;
-@@ -10046,8 +9383,6 @@ expredir(union node *n)
+@@ -10046,8 +9387,6 @@ expredir(union node *n)
  		case NTOFD: /* >& */
  			if (redir->ndup.vname) {
  				expandarg(redir->ndup.vname, &fn, EXP_TILDE | EXP_REDIR);
@@ -1681,7 +1681,7 @@ index b8ff67b..feabc51 100644
  #if BASH_REDIR_OUTPUT
  				if (!isdigit_str(fn.list->text)) {
  					/* >&file, not >&fd */
-@@ -10094,10 +9429,7 @@ evalpipe(union node *n, int flags)
+@@ -10094,10 +9433,7 @@ evalpipe(union node *n, int flags)
  		prehash(lp->n);
  		pip[1] = -1;
  		if (lp->next) {
@@ -1693,7 +1693,7 @@ index b8ff67b..feabc51 100644
  		}
  		if (forkshell(jp, lp->n, n->npipe.pipe_backgnd) == 0) {
  			/* child */
-@@ -10228,27 +9560,12 @@ poplocalvars(int keep)
+@@ -10228,27 +9564,12 @@ poplocalvars(int keep)
  	next = ll->lv;
  	free(ll);
  
@@ -1723,7 +1723,7 @@ index b8ff67b..feabc51 100644
  			memcpy(optlist, lvp->text, sizeof(optlist));
  			free((char*)lvp->text);
  			optschanged();
-@@ -10320,9 +9637,6 @@ evalfun(struct funcnode *func, int argc, char **argv, int flags)
+@@ -10320,9 +9641,6 @@ evalfun(struct funcnode *func, int argc, char **argv, int flags)
  	savefuncname = funcname;
  	savehandler = exception_handler;
  	e = setjmp(jmploc.loc);
@@ -1733,7 +1733,7 @@ index b8ff67b..feabc51 100644
  	INTOFF;
  	exception_handler = &jmploc;
  	shellparam.malloced = 0;
-@@ -10617,8 +9931,6 @@ pwdcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+@@ -10617,8 +9935,6 @@ pwdcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
  
  	flags = cdopt();
  	if (flags) {
@@ -1742,7 +1742,7 @@ index b8ff67b..feabc51 100644
  		dir = physdir;
  	}
  	out1fmt("%s\n", dir);
-@@ -10650,19 +9962,9 @@ hashcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+@@ -10650,19 +9966,9 @@ hashcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
  	}
  
  	c = 0;
@@ -1764,7 +1764,7 @@ index b8ff67b..feabc51 100644
  		find_command(name, &entry, DO_ERR, pathval());
  		if (entry.cmdtype == CMDUNKNOWN)
  			c = 1;
-@@ -11103,7 +10405,7 @@ evalcommand(union node *cmd, int flags)
+@@ -11103,7 +10409,7 @@ evalcommand(union node *cmd, int flags)
  	if (cmdentry.cmdtype != CMDBUILTIN
  	 || !(IS_BUILTIN_REGULAR(cmdentry.u.cmd))
  	) {
@@ -1773,7 +1773,7 @@ index b8ff67b..feabc51 100644
  		find_command(argv[0], &cmdentry, cmd_flag | DO_ERR, path);
  	}
  
-@@ -11111,11 +10413,6 @@ evalcommand(union node *cmd, int flags)
+@@ -11111,11 +10417,6 @@ evalcommand(union node *cmd, int flags)
  
  	/* Execute the command. */
  	switch (cmdentry.cmdtype) {
@@ -1785,7 +1785,7 @@ index b8ff67b..feabc51 100644
  	default: {
  
  #if ENABLE_FEATURE_SH_STANDALONE \
-@@ -11186,8 +10483,7 @@ evalcommand(union node *cmd, int flags)
+@@ -11186,8 +10487,7 @@ evalcommand(union node *cmd, int flags)
  		break;
  
  	case CMDFUNCTION:
@@ -1795,7 +1795,7 @@ index b8ff67b..feabc51 100644
  		break;
  	} /* switch */
  
-@@ -11336,9 +10632,7 @@ static void popstring(void)
+@@ -11336,9 +10636,7 @@ static void popstring(void)
  		) {
  			checkkwd |= CHKALIAS;
  		}
@@ -1806,7 +1806,7 @@ index b8ff67b..feabc51 100644
  	}
  #endif
  	g_parsefile->next_to_pgetc = sp->prev_string;
-@@ -11511,8 +10805,6 @@ preadbuffer(void)
+@@ -11511,8 +10809,6 @@ preadbuffer(void)
  
  		if (more <= 0) {
  			g_parsefile->left_in_line = q - g_parsefile->next_to_pgetc - 1;
@@ -1815,7 +1815,7 @@ index b8ff67b..feabc51 100644
  			break;
  		}
  	}
-@@ -11555,9 +10847,6 @@ static void freestrings(struct strpush *sp)
+@@ -11555,9 +10851,6 @@ static void freestrings(struct strpush *sp)
  #if ENABLE_ASH_ALIAS
  		if (sp->ap) {
  			sp->ap->flag &= ~ALIASINUSE;
@@ -1825,7 +1825,7 @@ index b8ff67b..feabc51 100644
  		}
  #endif
  		psp = sp;
-@@ -11698,19 +10987,10 @@ popfile(void)
+@@ -11698,19 +10991,10 @@ popfile(void)
  {
  	struct parsefile *pf = g_parsefile;
  
@@ -1845,7 +1845,7 @@ index b8ff67b..feabc51 100644
  	g_parsefile = pf->prev;
  	free(pf);
  	INTON;
-@@ -11740,10 +11020,6 @@ static void
+@@ -11740,10 +11024,6 @@ static void
  closescript(void)
  {
  	popallfiles();
@@ -1856,7 +1856,7 @@ index b8ff67b..feabc51 100644
  }
  
  /*
-@@ -11776,15 +11052,10 @@ setinputfile(const char *fname, int flags)
+@@ -11776,15 +11056,10 @@ setinputfile(const char *fname, int flags)
  
  	INTOFF;
  	fd = sh_open(fname, O_RDONLY, flags & INPUT_NOFILE_OK);
@@ -1875,7 +1875,7 @@ index b8ff67b..feabc51 100644
  	INTON;
  	return fd;
  }
-@@ -12159,31 +11430,7 @@ change_random(const char *value)
+@@ -12159,31 +11434,7 @@ change_random(const char *value)
  }
  #endif
  
@@ -1907,7 +1907,7 @@ index b8ff67b..feabc51 100644
  
  #if ENABLE_ASH_GETOPTS
  static int
-@@ -12539,15 +11786,8 @@ fixredir(union node *n, const char *text, int err)
+@@ -12539,15 +11790,8 @@ fixredir(union node *n, const char *text, int err)
  	fd = bb_strtou(text, NULL, 10);
  	if (!errno && fd >= 0)
  		n->ndup.dupfd = fd;
@@ -1924,7 +1924,7 @@ index b8ff67b..feabc51 100644
  }
  
  static void
-@@ -12876,11 +12116,9 @@ parse_command(void)
+@@ -12876,11 +12120,9 @@ parse_command(void)
  
  			checkkwd = CHKNL | CHKKWD;
  			t = readtoken();
@@ -1939,7 +1939,7 @@ index b8ff67b..feabc51 100644
  		}
  		*cpp = NULL;
  		goto redir;
-@@ -13079,32 +12317,22 @@ readtoken1(int c, int syntax, struct heredoc *eofmark)
+@@ -13079,32 +12321,22 @@ readtoken1(int c, int syntax, struct heredoc *eofmark)
  			break;
  		case CBACK:     /* backslash */
  			c = pgetc();
@@ -1985,7 +1985,7 @@ index b8ff67b..feabc51 100644
  			break;
  		case CSQUOTE:
  			synstack->syntax = SQSYNTAX;
-@@ -13229,13 +12457,9 @@ readtoken1(int c, int syntax, struct heredoc *eofmark)
+@@ -13229,13 +12461,9 @@ readtoken1(int c, int syntax, struct heredoc *eofmark)
  		if ((c == '>' || c == '<' IF_BASH_REDIR_OUTPUT( || c == 0x100 + '>'))
  		 && quotef == 0
  		) {
@@ -2002,7 +2002,7 @@ index b8ff67b..feabc51 100644
  		}
  		pungetc();
  	}
-@@ -13552,7 +12776,7 @@ parsesub: {
+@@ -13552,7 +12780,7 @@ parsesub: {
  		 && subtype != VSNORMAL
  		) {
  			synstack_push(&synstack,
@@ -2011,7 +2011,7 @@ index b8ff67b..feabc51 100644
  				newsyn);
  
  			synstack->varpushed = 1;
-@@ -13707,7 +12931,7 @@ parsebackq: {
+@@ -13707,7 +12935,7 @@ parsebackq: {
  parsearith: {
  
  	synstack_push(&synstack,
@@ -2020,7 +2020,7 @@ index b8ff67b..feabc51 100644
  			ARISYNTAX);
  	synstack->dblquote = 1;
  	USTPUTC(CTLARI, out);
-@@ -14335,7 +13559,7 @@ trapcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+@@ -14335,7 +13563,7 @@ trapcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
  				 * We are printing short names: */
  				out1fmt("trap -- %s %s\n",
  						single_quote(tr),
@@ -2029,7 +2029,7 @@ index b8ff67b..feabc51 100644
  		/* trap_ptr != trap only if we are in special-cased `trap` code.
  		 * In this case, we will exit very soon, no need to free(). */
  				/* if (trap_ptr != trap && tp[0]) */
-@@ -14637,12 +13861,10 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+@@ -14637,12 +13865,10 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
  			params.opt_u = optionarg;
  			break;
  #if BASH_READ_D
@@ -2043,7 +2043,7 @@ index b8ff67b..feabc51 100644
  		}
  	}
  
-@@ -14662,18 +13884,7 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
+@@ -14662,18 +13888,7 @@ readcmd(int argc UNUSED_PARAM, char **argv UNUSED_PARAM)
  	r = shell_builtin_read(&params);
  	INTON;
  
@@ -2062,7 +2062,7 @@ index b8ff67b..feabc51 100644
  
  	if ((uintptr_t)r > 1)
  		ash_msg_and_raise_error(r);
-@@ -14942,13 +14153,7 @@ procargs(char **xargv)
+@@ -14942,13 +14157,7 @@ procargs(char **xargv)
  			ash_msg_and_raise_error(bb_msg_requires_arg, "-c");
  		sflag = 1;
  	}
@@ -2077,7 +2077,7 @@ index b8ff67b..feabc51 100644
  	if (mflag == 2)
  		mflag = iflag;
  	/* Unset options which weren't explicitly set or unset */
-@@ -15001,8 +14206,7 @@ static void
+@@ -15001,8 +14210,7 @@ static void
  read_profile(const char *name)
  {
  	name = expandstr(name, DQSYNTAX);
@@ -2087,7 +2087,7 @@ index b8ff67b..feabc51 100644
  	cmdloop(0);
  	popfile();
  }
-@@ -15059,20 +14263,10 @@ int ash_main(int argc UNUSED_PARAM, char **argv)
+@@ -15059,20 +14267,10 @@ int ash_main(int argc UNUSED_PARAM, char **argv)
  			exitshell();
  		}
  
@@ -2110,7 +2110,7 @@ index b8ff67b..feabc51 100644
  	}
  	exception_handler = &main_handler;
 diff --git a/shell/hush.c b/shell/hush.c
-index bc8d1e7..7b921a0 100644
+index bc8d1e7..a5e068a 100644
 --- a/shell/hush.c
 +++ b/shell/hush.c
 @@ -415,7 +415,7 @@
@@ -2476,22 +2476,7 @@ index bc8d1e7..7b921a0 100644
  	return G.cwd;
  }
  
-@@ -2419,13 +2244,7 @@ static const char* FAST_FUNC get_local_var_value(const char *name)
- 	struct variable **vpp;
- 
- 	if (G.expanded_assignments) {
--		char **cpp = G.expanded_assignments;
--		while (*cpp) {
--			char *cp = *cpp;
--			if (varcmp(cp, name) == 0)
--				return strchr(cp, '=') + 1;
--			cpp++;
--		}
-+		return strchr(G.expanded_assignments[0], '=') + 1;
- 	}
- 
- 	vpp = get_ptr_to_local_var(name);
-@@ -2536,24 +2355,8 @@ static int set_local_var(char *str, unsigned flags)
+@@ -2536,24 +2361,8 @@ static int set_local_var(char *str, unsigned flags)
  			 * Remove it from global variable list:
  			 */
  			*cur_pp = cur->next;
@@ -2518,7 +2503,7 @@ index bc8d1e7..7b921a0 100644
  			break;
  		}
  
-@@ -2684,12 +2487,7 @@ static void add_vars(struct variable *var)
+@@ -2684,12 +2493,7 @@ static void add_vars(struct variable *var)
  		next = var->next;
  		var->next = G.top_var;
  		G.top_var = var;
@@ -2532,7 +2517,7 @@ index bc8d1e7..7b921a0 100644
  		var = next;
  	}
  }
-@@ -2889,15 +2687,7 @@ static int show_prompt_and_get_stdin(struct in_str *i)
+@@ -2889,15 +2693,7 @@ static int show_prompt_and_get_stdin(struct in_str *i)
  		 * it generates SIGINT as usual.
  		 */
  		check_and_run_traps();
@@ -2549,7 +2534,7 @@ index bc8d1e7..7b921a0 100644
  	}
  	return r;
  # endif
-@@ -2996,11 +2786,7 @@ static int i_getch(struct in_str *i)
+@@ -2996,11 +2792,7 @@ static int i_getch(struct in_str *i)
  			goto again;
  		}
  #endif
@@ -2562,7 +2547,7 @@ index bc8d1e7..7b921a0 100644
  	}
  
  	/* FILE-based in_str */
-@@ -3109,10 +2895,6 @@ static int i_getch_and_eat_bkslash_nl(struct in_str *input)
+@@ -3109,10 +2901,6 @@ static int i_getch_and_eat_bkslash_nl(struct in_str *input)
  		ch = i_getch(input);
  		if (ch != '\\')
  			return ch;
@@ -2573,7 +2558,7 @@ index bc8d1e7..7b921a0 100644
  		i_getch(input);
  	}
  }
-@@ -3259,8 +3041,6 @@ static void x_mode_prefix(void)
+@@ -3259,8 +3047,6 @@ static void x_mode_prefix(void)
  static void x_mode_flush(void)
  {
  	int len = G.x_mode_buf.length;
@@ -2582,7 +2567,7 @@ index bc8d1e7..7b921a0 100644
  	if (G.x_mode_fd > 0) {
  		G.x_mode_buf.data[len] = '\n';
  		full_write(G.x_mode_fd, G.x_mode_buf.data, len + 1);
-@@ -3330,8 +3110,6 @@ static void o_addqblock(o_string *o, const char *str, int len)
+@@ -3330,8 +3116,6 @@ static void o_addqblock(o_string *o, const char *str, int len)
  		char ch;
  		int sz;
  		int ordinary_cnt = strcspn(str, "*?[-\\" MAYBE_BRACES);
@@ -2591,7 +2576,7 @@ index bc8d1e7..7b921a0 100644
  		o_addblock(o, str, ordinary_cnt);
  		if (ordinary_cnt == len)
  			return; /* NUL is already added by o_addblock */
-@@ -3541,9 +3319,7 @@ static const char *next_brace_sub(const char *cp)
+@@ -3541,9 +3325,7 @@ static const char *next_brace_sub(const char *cp)
  	cp++;
  	while (*cp != '\0') {
  		if (*cp == '\\') {
@@ -2602,7 +2587,7 @@ index bc8d1e7..7b921a0 100644
  			continue;
  		}
  		if ((*cp == '}' && depth-- == 0) || (*cp == ',' && depth == 0))
-@@ -3650,19 +3426,10 @@ static int glob_brace(char *pattern, o_string *o, int n)
+@@ -3650,19 +3432,10 @@ static int glob_brace(char *pattern, o_string *o, int n)
  		gr = glob(pattern, 0, NULL, &globdata);
  		debug_printf_glob("glob('%s'):%d\n", pattern, gr);
  		if (gr != 0) {
@@ -2626,7 +2611,7 @@ index bc8d1e7..7b921a0 100644
  		}
  		if (globdata.gl_pathv && globdata.gl_pathv[0]) {
  			char **argv = globdata.gl_pathv;
-@@ -3770,7 +3537,7 @@ static int perform_glob(o_string *o, int n)
+@@ -3770,7 +3543,7 @@ static int perform_glob(o_string *o, int n)
  			goto literal;
  		}
  		if (gr == GLOB_NOSPACE)
@@ -2635,7 +2620,7 @@ index bc8d1e7..7b921a0 100644
  		/* GLOB_ABORTED? Only happens with GLOB_ERR flag,
  		 * but we didn't specify it. Paranoia again. */
  		bb_error_msg_and_die("glob error %d on '%s'", gr, pattern);
-@@ -4546,11 +4313,7 @@ static int done_word(struct parse_context *ctx)
+@@ -4546,11 +4319,7 @@ static int done_word(struct parse_context *ctx)
  #endif /* HAS_KEYWORDS */
  
  	if (command->group) {
@@ -2647,7 +2632,7 @@ index bc8d1e7..7b921a0 100644
  	}
  
  	/* If this word wasn't an assignment, next ones definitely
-@@ -4747,8 +4510,6 @@ static int redirect_opt_num(o_string *o)
+@@ -4747,8 +4516,6 @@ static int redirect_opt_num(o_string *o)
  {
  	int num;
  
@@ -2656,7 +2641,7 @@ index bc8d1e7..7b921a0 100644
  	num = bb_strtou(o->data, NULL, 10);
  	if (errno || num < 0)
  		return -1;
-@@ -4815,11 +4576,6 @@ static char *fetch_till_str(o_string *as_string,
+@@ -4815,11 +4582,6 @@ static char *fetch_till_str(o_string *as_string,
  						if (ch != EOF)
  							nommu_addchr(as_string, ch);
  					} while ((heredoc_flags & HEREDOC_SKIPTABS) && ch == '\t');
@@ -2668,7 +2653,7 @@ index bc8d1e7..7b921a0 100644
  				}
  			} else {
  				/* Backslash-line continuation in an unquoted
-@@ -4879,12 +4635,6 @@ static int fetch_heredocs(o_string *as_string, struct pipe *pi, int heredoc_cnt,
+@@ -4879,12 +4641,6 @@ static int fetch_heredocs(o_string *as_string, struct pipe *pi, int heredoc_cnt,
  					char *p;
  
  					redir->rd_type = REDIRECT_HEREDOC2;
@@ -2681,7 +2666,7 @@ index bc8d1e7..7b921a0 100644
  					p = fetch_till_str(as_string, input,
  							redir->rd_filename, redir->rd_dup);
  					if (!p) {
-@@ -4898,11 +4648,7 @@ static int fetch_heredocs(o_string *as_string, struct pipe *pi, int heredoc_cnt,
+@@ -4898,11 +4654,7 @@ static int fetch_heredocs(o_string *as_string, struct pipe *pi, int heredoc_cnt,
  				redir = redir->next;
  			}
  			if (cmd->group) {
@@ -2693,7 +2678,7 @@ index bc8d1e7..7b921a0 100644
  			}
  			cmd++;
  		}
-@@ -4949,15 +4695,11 @@ static int parse_group(struct parse_context *ctx,
+@@ -4949,15 +4701,11 @@ static int parse_group(struct parse_context *ctx,
  	 && !ctx->word.has_quoted_part
  	) {
  		if (ctx->word.length)
@@ -2711,7 +2696,7 @@ index bc8d1e7..7b921a0 100644
  			return -1;
  		}
  		if (ch == '(') {
-@@ -5006,18 +4748,8 @@ static int parse_group(struct parse_context *ctx,
+@@ -5006,18 +4754,8 @@ static int parse_group(struct parse_context *ctx,
  		IF_HUSH_FUNCTIONS(if (command->cmd_type != CMD_FUNCDEF))
  			command->cmd_type = CMD_SUBSHELL;
  	} else {
@@ -2732,7 +2717,7 @@ index bc8d1e7..7b921a0 100644
  	}
  
  	debug_printf_heredoc("calling parse_stream, heredoc_cnt:%d\n", heredoc_cnt);
-@@ -5092,10 +4824,6 @@ static int add_till_single_quote_dquoted(o_string *dest, struct in_str *input)
+@@ -5092,10 +4830,6 @@ static int add_till_single_quote_dquoted(o_string *dest, struct in_str *input)
  {
  	while (1) {
  		int ch = i_getch(input);
@@ -2743,7 +2728,7 @@ index bc8d1e7..7b921a0 100644
  		if (ch == '\'')
  			return 1;
  		o_addqchr(dest, ch);
-@@ -5119,10 +4847,7 @@ static int add_till_double_quote(o_string *dest, struct in_str *input)
+@@ -5119,10 +4853,7 @@ static int add_till_double_quote(o_string *dest, struct in_str *input)
  		}
  		o_addchr(dest, ch);
  		if (ch == '`') {
@@ -2755,7 +2740,7 @@ index bc8d1e7..7b921a0 100644
  		}
  		//if (ch == '$') ...
  	}
-@@ -5150,13 +4875,7 @@ static int add_till_backquote(o_string *dest, struct in_str *input, int in_dquot
+@@ -5150,13 +4881,7 @@ static int add_till_backquote(o_string *dest, struct in_str *input, int in_dquot
  		if (ch == '\\') {
  			/* \x. Copy both unless it is \`, \$, \\ and maybe \" */
  			ch = i_getch(input);
@@ -2770,7 +2755,7 @@ index bc8d1e7..7b921a0 100644
  		}
  		if (ch == EOF) {
  			syntax_error_unterm_ch('`');
-@@ -5423,9 +5142,7 @@ static int parse_dollar(o_string *as_string,
+@@ -5423,9 +5148,7 @@ static int parse_dollar(o_string *as_string,
  		 * or even ${?+subst} - operator acting on a special variable,
  		 * or the beginning of variable name.
  		 */
@@ -2781,7 +2766,7 @@ index bc8d1e7..7b921a0 100644
   bad_dollar_syntax:
  			syntax_error_unterm_str("${name}");
  			debug_printf_parse("parse_dollar return 0: unterminated ${name}\n");
-@@ -5535,10 +5252,12 @@ static int parse_dollar(o_string *as_string,
+@@ -5535,10 +5258,12 @@ static int parse_dollar(o_string *as_string,
  #else
  # error Simple code to only allow ${var} is not implemented
  #endif
@@ -2794,7 +2779,7 @@ index bc8d1e7..7b921a0 100644
  
  				if ((BASH_SUBSTR || BASH_PATTERN_SUBST)
  					 && (end_ch & 0xff00)
-@@ -5581,11 +5300,13 @@ static int parse_dollar(o_string *as_string,
+@@ -5581,11 +5306,13 @@ static int parse_dollar(o_string *as_string,
  				pos = dest->length;
  			if (!add_till_closing_bracket(dest, input, ')' | DOUBLE_CLOSE_CHAR_FLAG))
  				return 0; /* error */
@@ -2808,7 +2793,7 @@ index bc8d1e7..7b921a0 100644
  			o_addchr(dest, SPECIAL_VAR_SYMBOL);
  			break;
  		}
-@@ -5597,10 +5318,12 @@ static int parse_dollar(o_string *as_string,
+@@ -5597,10 +5324,12 @@ static int parse_dollar(o_string *as_string,
  			pos = dest->length;
  		if (!add_till_closing_bracket(dest, input, ')'))
  			return 0; /* error */
@@ -2821,7 +2806,7 @@ index bc8d1e7..7b921a0 100644
  		o_addchr(dest, SPECIAL_VAR_SYMBOL);
  # endif
  		break;
-@@ -5662,48 +5385,24 @@ static int encode_string(o_string *as_string,
+@@ -5662,48 +5391,24 @@ static int encode_string(o_string *as_string,
  	debug_printf_parse("\" ch:%c (%d) globprotect:%d\n",
  			ch, ch, !!(dest->o_expflags & EXP_FLAG_GLOBPROTECT_CHARS));
  	if (ch == '\\') {
@@ -2874,7 +2859,7 @@ index bc8d1e7..7b921a0 100644
  		goto again;
  	}
  #endif
-@@ -5979,8 +5678,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -5979,8 +5684,7 @@ static struct pipe *parse_stream(char **pstring,
  					goto ch_is_newline;
  			}
  #endif
@@ -2884,7 +2869,7 @@ index bc8d1e7..7b921a0 100644
  #if ENABLE_HUSH_FUNCTION_KEYWORD
  			if (ctx.command->cmd_type == CMD_FUNCTION_KWORD
  			 && ctx.command->argv /* "function WORD" */
-@@ -6000,8 +5698,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6000,8 +5704,7 @@ static struct pipe *parse_stream(char **pstring,
  					goto add_to_albuf_and_get_next_char;
  			}
  #endif
@@ -2894,7 +2879,7 @@ index bc8d1e7..7b921a0 100644
  			/* Is this a case when newline is simply ignored?
  			 * Some examples:
  			 * "CMD | <newline> CMD ..."
-@@ -6051,8 +5748,6 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6051,8 +5754,6 @@ static struct pipe *parse_stream(char **pstring,
  			debug_printf_heredoc("heredoc_cnt:%d\n", heredoc_cnt);
  			if (heredoc_cnt) {
  				heredoc_cnt = fetch_heredocs(&ctx.as_string, ctx.list_head, heredoc_cnt, input);
@@ -2903,7 +2888,7 @@ index bc8d1e7..7b921a0 100644
  			}
  			ctx.is_assignment = MAYBE_ASSIGNMENT;
  			debug_printf_parse("newline is treated as ';', ctx.is_assignment='%s'\n", assignment_flag[ctx.is_assignment]);
-@@ -6109,30 +5804,9 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6109,30 +5810,9 @@ static struct pipe *parse_stream(char **pstring,
  		 * Pathological example: { ""}; } should run "}" command.
  		 */
  		if (ch == '}') {
@@ -2935,7 +2920,7 @@ index bc8d1e7..7b921a0 100644
  		if (end_trigger && end_trigger == ch
  		 && (ch != ';'
  		    /* it's ";". Can exit parse_stream() only if have no heredocs to consume, and alias buffer is empty */
-@@ -6153,8 +5827,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6153,8 +5833,7 @@ static struct pipe *parse_stream(char **pstring,
  					goto add_to_albuf_and_get_next_char;
  			}
  #endif
@@ -2945,7 +2930,7 @@ index bc8d1e7..7b921a0 100644
  #if ENABLE_HUSH_FUNCTION_KEYWORD
  			if (ctx.command->cmd_type == CMD_FUNCTION_KWORD) {
  				/* Testcase: sh -c '(function)' */
-@@ -6205,8 +5878,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6205,8 +5884,7 @@ static struct pipe *parse_stream(char **pstring,
  		switch (ch) {
  		case '>':
  			redir_fd = redirect_opt_num(&ctx.word);
@@ -2955,7 +2940,7 @@ index bc8d1e7..7b921a0 100644
  			redir_style = REDIRECT_OVERWRITE;
  			if (next == '>') {
  				redir_style = REDIRECT_APPEND;
-@@ -6219,13 +5891,11 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6219,13 +5897,11 @@ static struct pipe *parse_stream(char **pstring,
  				goto parse_error_exitcode1;
  			}
  #endif
@@ -2971,7 +2956,7 @@ index bc8d1e7..7b921a0 100644
  			redir_style = REDIRECT_INPUT;
  			if (next == '<') {
  				redir_style = REDIRECT_HEREDOC;
-@@ -6252,8 +5922,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6252,8 +5928,7 @@ static struct pipe *parse_stream(char **pstring,
  				goto parse_error_exitcode1;
  			}
  #endif
@@ -2981,16 +2966,7 @@ index bc8d1e7..7b921a0 100644
  			continue; /* get next char */
  		case '#':
  			if (IS_NULL_WORD(ctx.word)) {
-@@ -6272,8 +5941,6 @@ static struct pipe *parse_stream(char **pstring,
- 						break;
- 					}
- 					ch = i_getch(input);
--					if (ch == EOF)
--						goto eof;
- 				}
- 				continue; /* get next char */
- 			}
-@@ -6352,8 +6019,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6352,8 +6027,7 @@ static struct pipe *parse_stream(char **pstring,
  					goto add_to_albuf_and_get_next_char;
  			}
  #endif
@@ -3000,7 +2976,7 @@ index bc8d1e7..7b921a0 100644
  #if ENABLE_HUSH_FUNCTION_KEYWORD
  			if (ctx.command->cmd_type == CMD_FUNCTION_KWORD) {
  				/* Testcase: sh -c '{ function; }'; sh -c '{ function f; }' */
-@@ -6386,8 +6052,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6386,8 +6060,7 @@ static struct pipe *parse_stream(char **pstring,
  					goto add_to_albuf_and_get_next_char;
  			}
  #endif
@@ -3010,7 +2986,7 @@ index bc8d1e7..7b921a0 100644
  			if (ctx.pipe->num_cmds == 0 && IS_NULL_CMD(ctx.command)) {
  				/* Testcase: sh -c '&& date' */
  				/* Testcase: sh -c '&' */
-@@ -6420,8 +6085,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6420,8 +6093,7 @@ static struct pipe *parse_stream(char **pstring,
  //					syntax_error_unexpected_ch(ch);
  //					goto parse_error_exitcode1;
  //				}
@@ -3020,7 +2996,7 @@ index bc8d1e7..7b921a0 100644
  				continue; /* get next char */
  			}
  #endif
-@@ -6433,8 +6097,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6433,8 +6105,7 @@ static struct pipe *parse_stream(char **pstring,
  					goto add_to_albuf_and_get_next_char;
  			}
  #endif
@@ -3030,7 +3006,7 @@ index bc8d1e7..7b921a0 100644
  			if (next == '|') { /* || */
  				ch = i_getch(input);
  				nommu_addchr(&ctx.as_string, ch);
-@@ -6490,8 +6153,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6490,8 +6161,7 @@ static struct pipe *parse_stream(char **pstring,
  //					syntax_error_unexpected_ch(ch);
  //					goto parse_error_exitcode1;
  //				}
@@ -3040,7 +3016,7 @@ index bc8d1e7..7b921a0 100644
  //FIXME: accepts "W1 W2) CMD;;" as if it was "W1|W2) CMD;;", should not allow this syntax at all
  				done_pipe(&ctx, PIPE_SEQ);
  				goto finished_cmd;
-@@ -6526,8 +6188,7 @@ static struct pipe *parse_stream(char **pstring,
+@@ -6526,8 +6196,7 @@ static struct pipe *parse_stream(char **pstring,
  		goto parse_error_exitcode1;
  	}
  
@@ -3050,7 +3026,7 @@ index bc8d1e7..7b921a0 100644
  #if ENABLE_HUSH_FUNCTION_KEYWORD
  	if (ctx.command->cmd_type == CMD_FUNCTION_KWORD) {
  		/* Testcase: sh -c 'function'; sh -c 'function f' */
-@@ -6641,17 +6302,7 @@ static void o_addblock_duplicate_backslash(o_string *o, const char *str, int len
+@@ -6641,17 +6310,7 @@ static void o_addblock_duplicate_backslash(o_string *o, const char *str, int len
  	while (--len >= 0) {
  		char c = *str++;
  
@@ -3069,7 +3045,7 @@ index bc8d1e7..7b921a0 100644
  		o_addchr(o, c);
  		if (c == '\\') {
  			/* \z -> \\\z; \<eol> -> \\<eol> */
-@@ -6675,26 +6326,10 @@ static int expand_on_ifs(o_string *output, int n, const char *str)
+@@ -6675,26 +6334,10 @@ static int expand_on_ifs(o_string *output, int n, const char *str)
  {
  	int last_is_ifs = 0;
  
@@ -3099,7 +3075,7 @@ index bc8d1e7..7b921a0 100644
  			last_is_ifs = 0;
  			str += word_len;
  			if (!*str)  /* EOL - do not finalize word */
-@@ -6760,11 +6395,7 @@ static char *encode_then_expand_string(const char *str)
+@@ -6760,11 +6403,7 @@ static char *encode_then_expand_string(const char *str)
  	cp = str;
  	for (;;) {
  		if (!*cp) return NULL; /* string has no special chars */
@@ -3112,7 +3088,7 @@ index bc8d1e7..7b921a0 100644
  		cp++;
  	}
  
-@@ -6798,8 +6429,6 @@ static const char *first_special_char_in_vararg(const char *cp)
+@@ -6798,8 +6437,6 @@ static const char *first_special_char_in_vararg(const char *cp)
  		/* dquoted "${x:+ARG}" should not glob, therefore
  		 * '*' et al require some non-literal processing: */
  		if (*cp == '*') return cp;
@@ -3121,7 +3097,7 @@ index bc8d1e7..7b921a0 100644
  		cp++;
  	}
  }
-@@ -6840,54 +6469,35 @@ static char *encode_then_expand_vararg(const char *str,
+@@ -6840,54 +6477,35 @@ static char *encode_then_expand_vararg(const char *str,
  			if (ch == EOF)
  				break;
  			if (handle_squotes && ch == '\'') {
@@ -3183,7 +3159,7 @@ index bc8d1e7..7b921a0 100644
  			continue;
  		}
  #endif
-@@ -6950,41 +6560,19 @@ static NOINLINE int encode_then_append_var_plusminus(o_string *output, int n,
+@@ -6950,41 +6568,19 @@ static NOINLINE int encode_then_append_var_plusminus(o_string *output, int n,
  				/* PREFIX${x:d${e}f ...} and we met space: expand "d${e}f" and start new word.
  				 * do not assume we are at the start of the word (PREFIX above).
  				 */
@@ -3230,7 +3206,7 @@ index bc8d1e7..7b921a0 100644
  		if (ch == '"') {
  			dest.o_expflags ^= EXP_FLAG_GLOBPROTECT_CHARS;
  			if (dest.o_expflags) {
-@@ -6995,34 +6583,21 @@ static NOINLINE int encode_then_append_var_plusminus(o_string *output, int n,
+@@ -6995,34 +6591,21 @@ static NOINLINE int encode_then_append_var_plusminus(o_string *output, int n,
  		}
  		if (ch == '\\') {
  			ch = i_getch(&input);
@@ -3269,7 +3245,7 @@ index bc8d1e7..7b921a0 100644
  			continue;
  		}
  #endif
-@@ -7254,7 +6829,7 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
+@@ -7254,7 +6837,7 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
  			val = utoa(G.last_exitcode);
  			break;
  		case '#': /* argc */
@@ -3278,7 +3254,7 @@ index bc8d1e7..7b921a0 100644
  			break;
  		case '-': { /* active options */
  			/* Check set_mode() to see what option chars we support */
-@@ -7386,9 +6961,11 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
+@@ -7386,9 +6969,11 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
  				 * are actually in writable memory:
  				 * replace_pattern momentarily stores NULs there. */
  				t = (char*)val;
@@ -3291,7 +3267,7 @@ index bc8d1e7..7b921a0 100644
  						exp_op);
  				if (to_be_freed) /* at least one replace happened */
  					val = to_be_freed;
-@@ -7416,8 +6993,6 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
+@@ -7416,8 +7001,6 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
  			const char *errmsg;
  
  			beg = expand_and_evaluate_arith(exp_word, &errmsg);
@@ -3300,7 +3276,7 @@ index bc8d1e7..7b921a0 100644
  			debug_printf_varexp("beg:'%s'=%lld\n", exp_word, (long long)beg);
  			*p++ = SPECIAL_VAR_SYMBOL;
  			exp_word = p;
-@@ -7437,8 +7012,6 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
+@@ -7437,8 +7020,6 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
  				goto empty_result;
  			}
  			len = expand_and_evaluate_arith(exp_word, &errmsg);
@@ -3309,7 +3285,7 @@ index bc8d1e7..7b921a0 100644
  			debug_printf_varexp("len:'%s'=%lld\n", exp_word, (long long)len);
  			debug_printf_varexp("from val:'%s'\n", val);
  			if (len < 0) {
-@@ -7451,10 +7024,6 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
+@@ -7451,10 +7032,6 @@ static NOINLINE int expand_one_var(o_string *output, int n, char *arg, char **pp
   empty_result:
  				val = NULL;
  			} else {
@@ -3320,7 +3296,7 @@ index bc8d1e7..7b921a0 100644
  				val = to_be_freed = xstrndup(val + beg, len);
  			}
  			debug_printf_varexp("val:'%s'\n", val);
-@@ -7721,17 +7290,7 @@ static NOINLINE int expand_vars_to_list(o_string *output, int n, char *arg)
+@@ -7721,17 +7298,7 @@ static NOINLINE int expand_vars_to_list(o_string *output, int n, char *arg)
  			res = expand_and_evaluate_arith(arg, NULL);
  			debug_printf_subst("ARITH RES '"ARITH_FMT"'\n", res);
  			sprintf(arith_buf, ARITH_FMT, res);
@@ -3339,7 +3315,7 @@ index bc8d1e7..7b921a0 100644
  			o_addstr(output, arith_buf);
  			break;
  		}
-@@ -7840,20 +7399,9 @@ static char *expand_string_to_string(const char *str, int EXP_flags, int do_unba
+@@ -7840,20 +7407,9 @@ static char *expand_string_to_string(const char *str, int EXP_flags, int do_unba
  	argv[0] = (char*)str;
  	argv[1] = NULL;
  	list = expand_variables(argv, EXP_flags | EXP_FLAG_SINGLEWORD);
@@ -3363,7 +3339,7 @@ index bc8d1e7..7b921a0 100644
  	debug_printf_expand("string_to_string=>'%s'\n", (char*)list);
  	return (char*)list;
  }
-@@ -7911,9 +7459,6 @@ static void switch_off_special_sigs(unsigned mask)
+@@ -7911,9 +7467,6 @@ static void switch_off_special_sigs(unsigned mask)
  			continue;
  #if ENABLE_HUSH_TRAP
  		if (G_traps) {
@@ -3373,7 +3349,7 @@ index bc8d1e7..7b921a0 100644
  			free(G_traps[sig]);
  			G_traps[sig] = NULL;
  		}
-@@ -7963,9 +7508,6 @@ static void reset_traps_to_defaults(void)
+@@ -7963,9 +7516,6 @@ static void reset_traps_to_defaults(void)
  		/* sig has non-empty trap, reset it: */
  		free(G_traps[sig]);
  		G_traps[sig] = NULL;
@@ -3383,7 +3359,7 @@ index bc8d1e7..7b921a0 100644
  		install_sighandler(sig, pick_sighandler(sig));
  	}
  # endif
-@@ -8144,28 +7686,10 @@ static void parse_and_run_stream(struct in_str *inp, int end_trigger)
+@@ -8144,28 +7694,10 @@ static void parse_and_run_stream(struct in_str *inp, int end_trigger)
  			 * (not in `cmd` or something similar)...
  			 */
  			if (pipe_list == ERR_PTR && end_trigger == ';') {
@@ -3412,7 +3388,7 @@ index bc8d1e7..7b921a0 100644
  			break;
  		}
  		debug_print_tree(pipe_list, 0);
-@@ -8270,7 +7794,7 @@ static int generate_stream_from_string(const char *s, pid_t *pid_p)
+@@ -8270,7 +7802,7 @@ static int generate_stream_from_string(const char *s, pid_t *pid_p)
  			static const char *const argv[] ALIGN_PTR = { NULL, NULL };
  			builtin_trap((char**)argv);
  			fflush_all(); /* important */
@@ -3421,7 +3397,7 @@ index bc8d1e7..7b921a0 100644
  		}
  # endif
  # if BB_MMU
-@@ -8281,7 +7805,8 @@ static int generate_stream_from_string(const char *s, pid_t *pid_p)
+@@ -8281,7 +7813,8 @@ static int generate_stream_from_string(const char *s, pid_t *pid_p)
  		IF_HUSH_MODE_X(G.x_mode_depth++;)
  		//bb_error_msg("%s: ++x_mode_depth=%d", __func__, G.x_mode_depth);
  		parse_and_run_string(s);
@@ -3431,7 +3407,7 @@ index bc8d1e7..7b921a0 100644
  # else
  	/* We re-execute after vfork on NOMMU. This makes this script safe:
  	 * yes "0123456789012345678901234567890" | dd bs=32 count=64k >BIG
-@@ -8324,8 +7849,6 @@ static int process_command_subs(o_string *dest, const char *s)
+@@ -8324,8 +7857,6 @@ static int process_command_subs(o_string *dest, const char *s)
  	/* Now send results of command back into original context */
  	eol_cnt = 0;
  	while ((ch = getc(fp)) != EOF) {
@@ -3440,7 +3416,7 @@ index bc8d1e7..7b921a0 100644
  		if (ch == '\n') {
  			eol_cnt++;
  			continue;
-@@ -8410,18 +7933,19 @@ static void setup_heredoc(struct redir_struct *redir)
+@@ -8410,18 +7941,19 @@ static void setup_heredoc(struct redir_struct *redir)
  #if !BB_MMU
  	to_free = NULL;
  #endif
@@ -3463,7 +3439,7 @@ index bc8d1e7..7b921a0 100644
  #else
  		/* Delegate blocking writes to another process */
  		xmove_fd(pair.wr, STDOUT_FILENO);
-@@ -8467,16 +7991,7 @@ static struct squirrel *add_squirrel(struct squirrel *sq, int fd, int avoid_fd)
+@@ -8467,16 +7999,7 @@ static struct squirrel *add_squirrel(struct squirrel *sq, int fd, int avoid_fd)
  	if (sq) for (; sq[i].orig_fd >= 0; i++) {
  		/* If we collide with an already moved fd... */
  		if (fd == sq[i].moved_to) {
@@ -3481,7 +3457,7 @@ index bc8d1e7..7b921a0 100644
  			return sq;
  		}
  		if (fd == sq[i].orig_fd) {
-@@ -8486,11 +8001,7 @@ static struct squirrel *add_squirrel(struct squirrel *sq, int fd, int avoid_fd)
+@@ -8486,11 +8009,7 @@ static struct squirrel *add_squirrel(struct squirrel *sq, int fd, int avoid_fd)
  		}
  	}
  
@@ -3493,7 +3469,7 @@ index bc8d1e7..7b921a0 100644
  	return append_squirrel(sq, i, fd, moved_to);
  }
  
-@@ -8588,10 +8099,7 @@ static int save_fd_on_redirect(int fd, int avoid_fd, struct squirrel **sqp)
+@@ -8588,10 +8107,7 @@ static int save_fd_on_redirect(int fd, int avoid_fd, struct squirrel **sqp)
  	}
  
  	/* Check whether it collides with any open fds (e.g. stdio), save fds as needed */
@@ -3505,7 +3481,7 @@ index bc8d1e7..7b921a0 100644
  	return 0; /* "we did not close fd" */
  }
  
-@@ -8637,28 +8145,16 @@ static void restore_redirects(struct squirrel *sq)
+@@ -8637,28 +8153,16 @@ static void restore_redirects(struct squirrel *sq)
  #if ENABLE_FEATURE_SH_STANDALONE && BB_MMU
  static void close_saved_fds_and_FILE_fds(void)
  {
@@ -3535,7 +3511,7 @@ index bc8d1e7..7b921a0 100644
  	return 0;
  }
  
-@@ -8678,9 +8174,7 @@ static int setup_redirects(struct command *prog, struct squirrel **sqp)
+@@ -8678,9 +8182,7 @@ static int setup_redirects(struct command *prog, struct squirrel **sqp)
  		if (redir->rd_type == REDIRECT_HEREDOC2
  		 || redir->rd_type == REDIRECT_HERESTRING
  		) {
@@ -3546,7 +3522,7 @@ index bc8d1e7..7b921a0 100644
  			/* for REDIRECT_HEREDOC2, rd_filename holds _contents_ of the heredoc */
  			/* for REDIRECT_HERESTRING, rd_filename holds "WORD" */
  			debug_printf_redir("set heredoc '%s'\n",
-@@ -8741,8 +8235,6 @@ static int setup_redirects(struct command *prog, struct squirrel **sqp)
+@@ -8741,8 +8243,6 @@ static int setup_redirects(struct command *prog, struct squirrel **sqp)
  		/* if "N>&-": close redir->rd_fd (newfd is REDIRFD_CLOSE) */
  
  		closed = save_fd_on_redirect(redir->rd_fd, /*avoid:*/ newfd, sqp);
@@ -3555,7 +3531,7 @@ index bc8d1e7..7b921a0 100644
  		if (newfd == REDIRFD_CLOSE) {
  			/* "N>&-" means "close me" */
  			if (!closed) {
-@@ -8783,19 +8275,11 @@ static char *find_in_PATH(const char *name)
+@@ -8783,19 +8283,11 @@ static char *find_in_PATH(const char *name)
  {
  	char *p = (char*) get_local_var_value("PATH");
  
@@ -3576,7 +3552,7 @@ index bc8d1e7..7b921a0 100644
  		if (access(p, F_OK) == 0)
  			return p;
  		free(p);
-@@ -8911,8 +8395,7 @@ static void enter_var_nest_level(void)
+@@ -8911,8 +8403,7 @@ static void enter_var_nest_level(void)
  	 * In any case, with 8 Mbyte stack SEGV happens
  	 * not too long after 2^16 recursions anyway.
  	 */
@@ -3586,7 +3562,7 @@ index bc8d1e7..7b921a0 100644
  }
  
  static void leave_var_nest_level(void)
-@@ -8955,27 +8438,8 @@ static struct function *new_function(char *name)
+@@ -8955,27 +8446,8 @@ static struct function *new_function(char *name)
  
  	if (funcp != NULL) {
  		struct command *cmd = funcp->parent_cmd;
@@ -3616,7 +3592,7 @@ index bc8d1e7..7b921a0 100644
  	} else {
  		debug_printf_exec("remembering new function '%s'\n", name);
  		funcp = *funcpp = xzalloc(sizeof(*funcp));
-@@ -9048,7 +8512,8 @@ static NORETURN void exec_function(
+@@ -9048,7 +8520,8 @@ static NORETURN void exec_function(
  
  	/* On MMU, funcp->body is always non-NULL */
  	n = run_list(funcp->body);
@@ -3626,7 +3602,7 @@ index bc8d1e7..7b921a0 100644
  # else
  //?	close_saved_fds_and_FILE_fds();
  
-@@ -9122,7 +8587,7 @@ static NORETURN void exec_builtin(
+@@ -9122,7 +8595,7 @@ static NORETURN void exec_builtin(
  //?	close_saved_fds_and_FILE_fds();
  	rcode = x->b_function(argv);
  	fflush_all();
@@ -3635,7 +3611,7 @@ index bc8d1e7..7b921a0 100644
  #else
  	fflush_all();
  	/* On NOMMU, we must never block!
-@@ -9148,7 +8613,7 @@ static NORETURN void execvp_or_die(char **argv)
+@@ -9148,7 +8621,7 @@ static NORETURN void execvp_or_die(char **argv)
  	if (errno == EACCES) e = 126;
  	if (errno == ENOENT) e = 127;
  	bb_perror_msg("can't execute '%s'", argv[0]);
@@ -3644,7 +3620,7 @@ index bc8d1e7..7b921a0 100644
  }
  
  #if ENABLE_HUSH_MODE_X
-@@ -9277,7 +8742,7 @@ static NORETURN NOINLINE void pseudo_exec_argv(
+@@ -9277,7 +8750,7 @@ static NORETURN NOINLINE void pseudo_exec_argv(
  		 * expand_assignments(): think about ... | var=`sleep 1` | ...
  		 */
  		free_strings(new_env);
@@ -3653,7 +3629,7 @@ index bc8d1e7..7b921a0 100644
  	}
  
  	sv_shadowed = G.shadowed_vars_pp;
-@@ -9373,32 +8838,10 @@ static NORETURN NOINLINE void pseudo_exec_argv(
+@@ -9373,32 +8846,10 @@ static NORETURN NOINLINE void pseudo_exec_argv(
  		int a = find_applet_by_name(argv[0]);
  		if (a >= 0) {
  			if_command_vV_print_and_exit(opt_vV, argv[0], "an applet");
@@ -3690,7 +3666,7 @@ index bc8d1e7..7b921a0 100644
  		}
  	}
  #endif
-@@ -9422,7 +8865,7 @@ static NORETURN void pseudo_exec(
+@@ -9422,7 +8873,7 @@ static NORETURN void pseudo_exec(
  		/* Ignore funcdefs in pipes:
  		 * true | f() { cmd }
  		 */
@@ -3699,7 +3675,7 @@ index bc8d1e7..7b921a0 100644
  	}
  #endif
  
-@@ -9443,9 +8886,8 @@ static NORETURN void pseudo_exec(
+@@ -9443,9 +8894,8 @@ static NORETURN void pseudo_exec(
  		debug_printf_exec("pseudo_exec: run_list(command->group)\n");
  		reset_traps_to_defaults();
  		rcode = run_list(command->group);
@@ -3711,7 +3687,7 @@ index bc8d1e7..7b921a0 100644
  #else
  		debug_printf_exec("pseudo_exec: re_exec(command->group_as_string)\n");
  		re_execute_shell(&nommu_save->argv_from_re_execing,
-@@ -9458,7 +8900,7 @@ static NORETURN void pseudo_exec(
+@@ -9458,7 +8908,7 @@ static NORETURN void pseudo_exec(
  
  	/* Case when we are here: ... | >file */
  	debug_printf_exec("pseudo_exec'ed null command\n");
@@ -3720,7 +3696,7 @@ index bc8d1e7..7b921a0 100644
  }
  
  #if ENABLE_HUSH_JOB
-@@ -9471,8 +8913,7 @@ static const char *get_cmdtext(struct pipe *pi)
+@@ -9471,8 +8921,7 @@ static const char *get_cmdtext(struct pipe *pi)
  	/* This is subtle. ->cmdtext is created only on first backgrounding.
  	 * (Think "cat, <ctrl-z>, fg, <ctrl-z>, fg, <ctrl-z>...." here...)
  	 * On subsequent bg argv is trashed, but we won't use it */
@@ -3730,7 +3706,7 @@ index bc8d1e7..7b921a0 100644
  
  	argv = pi->cmds[0].argv;
  	if (!argv) {
-@@ -9502,8 +8943,6 @@ static void remove_job_from_table(struct pipe *pi)
+@@ -9502,8 +8951,6 @@ static void remove_job_from_table(struct pipe *pi)
  		G.job_list = pi->next;
  	} else {
  		prev_pipe = G.job_list;
@@ -3739,7 +3715,7 @@ index bc8d1e7..7b921a0 100644
  		prev_pipe->next = pi->next;
  	}
  	G.last_jobid = 0;
-@@ -9601,87 +9040,50 @@ static int process_wait_result(struct pipe *fg_pipe, pid_t childpid, int status)
+@@ -9601,87 +9048,50 @@ static int process_wait_result(struct pipe *fg_pipe, pid_t childpid, int status)
  	/* Were we asked to wait for a fg pipe? */
  	if (fg_pipe) {
  		i = fg_pipe->num_cmds;
@@ -3831,7 +3807,7 @@ index bc8d1e7..7b921a0 100644
  			rcode = 128 | WTERMSIG(status);
  		pi->cmds[i].cmd_exitcode = rcode;
  		if (G.last_bg_pid == pi->cmds[i].pid)
-@@ -9697,21 +9099,10 @@ static int process_wait_result(struct pipe *fg_pipe, pid_t childpid, int status)
+@@ -9697,21 +9107,10 @@ static int process_wait_result(struct pipe *fg_pipe, pid_t childpid, int status)
  						"Done", pi->cmdtext);
  				delete_finished_job(pi);
  			} else {
@@ -3853,7 +3829,7 @@ index bc8d1e7..7b921a0 100644
  	}
  #endif
  	return -1; /* this wasn't a process from fg_pipe */
-@@ -9780,16 +9171,6 @@ static int checkjobs(struct pipe *fg_pipe, pid_t waitfor_pid)
+@@ -9780,16 +9179,6 @@ static int checkjobs(struct pipe *fg_pipe, pid_t waitfor_pid)
  #endif
  		childpid = waitpid(-1, &status, attributes);
  		if (childpid <= 0) {
@@ -3870,7 +3846,7 @@ index bc8d1e7..7b921a0 100644
  			rcode = childpid;
  			break;
  		}
-@@ -9803,9 +9184,7 @@ static int checkjobs(struct pipe *fg_pipe, pid_t waitfor_pid)
+@@ -9803,9 +9192,7 @@ static int checkjobs(struct pipe *fg_pipe, pid_t waitfor_pid)
  			rcode = WEXITSTATUS(status);
  			if (WIFSIGNALED(status))
  				rcode = 128 | WTERMSIG(status);
@@ -3881,7 +3857,7 @@ index bc8d1e7..7b921a0 100644
  			rcode++;
  			break; /* "wait PID" called us, give it exitcode+1 */
  		}
-@@ -10198,8 +9577,7 @@ static NOINLINE int run_pipe(struct pipe *pi)
+@@ -10198,8 +9585,7 @@ static NOINLINE int run_pipe(struct pipe *pi)
  			 * we aren't ok with exitcode 0 when ^C was pressed
  			 * during builtin/nofork.
  			 */
@@ -3891,7 +3867,7 @@ index bc8d1e7..7b921a0 100644
  		}
  		free(argv_expanded);
  		IF_HAS_KEYWORDS(if (pi->pi_inverted) rcode = !rcode;)
-@@ -10249,13 +9627,6 @@ static NOINLINE int run_pipe(struct pipe *pi)
+@@ -10249,13 +9635,6 @@ static NOINLINE int run_pipe(struct pipe *pi)
  		if (!command->pid) { /* child */
  			disable_restore_tty_pgrp_on_exit();
  
@@ -3905,7 +3881,7 @@ index bc8d1e7..7b921a0 100644
  			if (BB_MMU)
  				CLEAR_RANDOM_T(&G.random_gen); /* or else $RANDOM repeats in child */
  #if ENABLE_HUSH_JOB
-@@ -10275,13 +9646,17 @@ static NOINLINE int run_pipe(struct pipe *pi)
+@@ -10275,13 +9654,17 @@ static NOINLINE int run_pipe(struct pipe *pi)
  					tcsetpgrp(G_interactive_fd, pgrp);
  				}
  			}
@@ -3925,7 +3901,7 @@ index bc8d1e7..7b921a0 100644
  			} else {
  				xmove_fd(next_infd, 0);
  			}
-@@ -10301,7 +9676,7 @@ static NOINLINE int run_pipe(struct pipe *pi)
+@@ -10301,7 +9684,7 @@ static NOINLINE int run_pipe(struct pipe *pi)
  				 * BAZ
  				 * (echo BAR is not executed, it hits _exit(1) below)
  				 */
@@ -3934,7 +3910,7 @@ index bc8d1e7..7b921a0 100644
  			}
  
  			/* Stores to nommu_save list of env vars putenv'ed
-@@ -10326,17 +9701,13 @@ static NOINLINE int run_pipe(struct pipe *pi)
+@@ -10326,17 +9709,13 @@ static NOINLINE int run_pipe(struct pipe *pi)
  #endif
  		free(argv_expanded);
  		argv_expanded = NULL;
@@ -3957,7 +3933,7 @@ index bc8d1e7..7b921a0 100644
  
  		if (cmd_no > 1)
  			close(next_infd);
-@@ -10346,12 +9717,6 @@ static NOINLINE int run_pipe(struct pipe *pi)
+@@ -10346,12 +9725,6 @@ static NOINLINE int run_pipe(struct pipe *pi)
  		next_infd = pipefds.rd;
  	}
  
@@ -3970,7 +3946,7 @@ index bc8d1e7..7b921a0 100644
  	debug_leave();
  	debug_printf_exec("run_pipe return -1 (%u children started)\n", pi->alive_cmds);
  	return -1;
-@@ -10393,24 +9758,12 @@ static int run_list(struct pipe *pi)
+@@ -10393,24 +9766,12 @@ static int run_list(struct pipe *pi)
  		for (cpipe = pi; cpipe; cpipe = cpipe->next) {
  			if (cpipe->res_word != RES_FOR && cpipe->res_word != RES_IN)
  				continue;
@@ -3997,7 +3973,7 @@ index bc8d1e7..7b921a0 100644
  			}
  		}
  	}
-@@ -10436,10 +9789,7 @@ static int run_list(struct pipe *pi)
+@@ -10436,10 +9797,7 @@ static int run_list(struct pipe *pi)
  		int r;
  		int sv_errexit_depth;
  
@@ -4009,7 +3985,7 @@ index bc8d1e7..7b921a0 100644
  
  		IF_HAS_KEYWORDS(rword = pi->res_word;)
  		debug_printf_exec(": rword:%d cond_code:%d last_rword:%d\n",
-@@ -10619,7 +9969,7 @@ static int run_list(struct pipe *pi)
+@@ -10619,7 +9977,7 @@ static int run_list(struct pipe *pi)
  #if ENABLE_HUSH_LOOPS
  		G.flag_break_continue = 0;
  #endif
@@ -4018,7 +3994,7 @@ index bc8d1e7..7b921a0 100644
  		/* NB: rcode is a smalluint, r is int */
  		if (r != -1) {
  			/* We ran a builtin, function, or group.
-@@ -10692,11 +10042,8 @@ static int run_list(struct pipe *pi)
+@@ -10692,11 +10050,8 @@ static int run_list(struct pipe *pi)
  #endif
  		}
  
@@ -4032,7 +4008,7 @@ index bc8d1e7..7b921a0 100644
  		}
  		G.errexit_depth = sv_errexit_depth;
  
-@@ -10839,17 +10186,7 @@ static void install_sighandlers(unsigned mask)
+@@ -10839,17 +10194,7 @@ static void install_sighandlers(unsigned mask)
  		 */
  		if (sig == SIGHUP && G_interactive_fd)
  			continue;
@@ -4051,7 +4027,7 @@ index bc8d1e7..7b921a0 100644
  	}
  }
  
-@@ -11044,8 +10381,7 @@ int hush_main(int argc, char **argv)
+@@ -11044,8 +10389,7 @@ int hush_main(int argc, char **argv)
  	/* IFS is not inherited from the parent environment */
  	set_local_var_from_halves("IFS", defifs);
  
@@ -4061,7 +4037,7 @@ index bc8d1e7..7b921a0 100644
  
  	/* PS1/PS2/HISTFILE are set later, if we determine that we are interactive */
  
-@@ -11102,6 +10438,7 @@ int hush_main(int argc, char **argv)
+@@ -11102,6 +10446,7 @@ int hush_main(int argc, char **argv)
  	/* Parse options */
  	/* http://www.opengroup.org/onlinepubs/9699919799/utilities/sh.html */
  	flags = (argv[0] && argv[0][0] == '-') ? OPT_login : 0;
@@ -4069,7 +4045,7 @@ index bc8d1e7..7b921a0 100644
  	while (1) {
  		int opt = getopt(argc, argv, "+" /* stop at 1st non-option */
  				"cexinsl"
-@@ -11125,9 +10461,7 @@ int hush_main(int argc, char **argv)
+@@ -11125,9 +10470,7 @@ int hush_main(int argc, char **argv)
  			G.opt_c = 1;
  			break;
  		case 'i':
@@ -4080,7 +4056,7 @@ index bc8d1e7..7b921a0 100644
  //There are a few cases where bash -i -c 'SCRIPT'
  //has visible effect (differs from bash -c 'SCRIPT'):
  //it ignores TERM:
-@@ -11263,13 +10597,10 @@ int hush_main(int argc, char **argv)
+@@ -11263,13 +10606,10 @@ int hush_main(int argc, char **argv)
  		 */
  		if (!hp) { /* unless we looped on the "goto" already */
  			hp = get_local_var_value("HOME");
@@ -4098,7 +4074,7 @@ index bc8d1e7..7b921a0 100644
  		}
  	}
  	/* "hush -l" doesn't die in startup scripts, but after -l is processed,
-@@ -11363,68 +10694,17 @@ int hush_main(int argc, char **argv)
+@@ -11363,68 +10703,17 @@ int hush_main(int argc, char **argv)
  	 * Refer to Posix.2, the description of the 'sh' utility.
  	 */
  #if ENABLE_HUSH_INTERACTIVE
@@ -4173,7 +4149,7 @@ index bc8d1e7..7b921a0 100644
  # endif
  # if ENABLE_FEATURE_EDITING_FANCY_PROMPT
  			/* Set (but not export) PS1/2 unless already set */
-@@ -11529,8 +10809,7 @@ static int FAST_FUNC builtin_cd(char **argv)
+@@ -11529,8 +10818,7 @@ static int FAST_FUNC builtin_cd(char **argv)
  		 * bash says "bash: cd: HOME not set" and does nothing
  		 * (exitcode 1)
  		 */
@@ -4183,7 +4159,7 @@ index bc8d1e7..7b921a0 100644
  	}
  	if (chdir(newdir)) {
  		/* Mimic bash message exactly */
-@@ -11597,13 +10876,10 @@ static int FAST_FUNC builtin_eval(char **argv)
+@@ -11597,13 +10885,10 @@ static int FAST_FUNC builtin_eval(char **argv)
  static int FAST_FUNC builtin_exec(char **argv)
  {
  	argv = skip_dash_dash(argv);
@@ -4198,7 +4174,7 @@ index bc8d1e7..7b921a0 100644
  
  	/* Saved-redirect fds, script fds and G_interactive_fd are still
  	 * open here. However, they are all CLOEXEC, and execv below
-@@ -11741,27 +11017,13 @@ static int FAST_FUNC builtin_read(char **argv)
+@@ -11741,27 +11026,13 @@ static int FAST_FUNC builtin_read(char **argv)
  //for the case of !BASH "read" with no args (now it fails silently)
  //(or maybe extend getopt32() to emit a message if "-1" fails)
  	);
@@ -4226,7 +4202,7 @@ index bc8d1e7..7b921a0 100644
  	if ((uintptr_t)r > 1) {
  		bb_simple_error_msg(r);
  		r = (char*)(uintptr_t)1;
-@@ -11889,16 +11151,7 @@ static int helper_export_local(char **argv, unsigned flags)
+@@ -11889,16 +11160,7 @@ static int helper_export_local(char **argv, unsigned flags)
  					continue;
  				}
  			}
@@ -4244,7 +4220,7 @@ index bc8d1e7..7b921a0 100644
  			/* Exporting non-existing variable.
  			 * bash does not put it in environment,
  			 * but remembers that it is exported,
-@@ -11940,8 +11193,6 @@ static int FAST_FUNC builtin_export(char **argv)
+@@ -11940,8 +11202,6 @@ static int FAST_FUNC builtin_export(char **argv)
  # if ENABLE_HUSH_EXPORT_N
  	/* "!": do not abort on errors */
  	opt_unexport = getopt32(argv, "!n");
@@ -4253,7 +4229,7 @@ index bc8d1e7..7b921a0 100644
  	argv += optind;
  # else
  	opt_unexport = 0;
-@@ -12020,8 +11271,6 @@ static int FAST_FUNC builtin_unset(char **argv)
+@@ -12020,8 +11280,6 @@ static int FAST_FUNC builtin_unset(char **argv)
  	/* "!": do not abort on errors */
  	/* "+": stop at 1st non-option */
  	opts = getopt32(argv, "!+vf");
@@ -4262,7 +4238,7 @@ index bc8d1e7..7b921a0 100644
  	if (opts == 3) {
  		bb_simple_error_msg("unset: -v and -f are exclusive");
  		return EXIT_FAILURE;
-@@ -12474,11 +11718,7 @@ static int FAST_FUNC builtin_jobs(char **argv UNUSED_PARAM)
+@@ -12474,11 +11732,7 @@ static int FAST_FUNC builtin_jobs(char **argv UNUSED_PARAM)
  
  	checkjobs(NULL, 0 /*(no pid to wait for)*/);
  	for (job = G.job_list; job; job = job->next) {
@@ -4275,7 +4251,7 @@ index bc8d1e7..7b921a0 100644
  		printf(JOB_STATUS_FORMAT, job->jobid, status_string, job->cmdtext);
  	}
  
-@@ -12496,13 +11736,7 @@ static int FAST_FUNC builtin_fg_bg(char **argv)
+@@ -12496,13 +11750,7 @@ static int FAST_FUNC builtin_fg_bg(char **argv)
  	if (!G_interactive_fd)
  		return EXIT_FAILURE;
  
@@ -4289,7 +4265,7 @@ index bc8d1e7..7b921a0 100644
  		bb_error_msg("%s: no current job", argv[0]);
  		return EXIT_FAILURE;
  	}
-@@ -12525,14 +11759,7 @@ static int FAST_FUNC builtin_fg_bg(char **argv)
+@@ -12525,14 +11773,7 @@ static int FAST_FUNC builtin_fg_bg(char **argv)
  	}
  	pi->stopped_cmds = 0;
  
@@ -4305,7 +4281,7 @@ index bc8d1e7..7b921a0 100644
  
  	if (argv[0][0] == 'f') {
  		remove_job_from_table(pi); /* FG job shouldn't be in job table */
-@@ -12593,14 +11820,6 @@ static int FAST_FUNC builtin_kill(char **argv)
+@@ -12593,14 +11834,6 @@ static int FAST_FUNC builtin_kill(char **argv)
  				dst += sprintf(dst, " -%u", (int)pi->pgrp);
  			else for (j = 0; j < n; j++) {
  				struct command *cmd = &pi->cmds[j];
@@ -4320,7 +4296,7 @@ index bc8d1e7..7b921a0 100644
  				dst += sprintf(dst, " %u", (int)cmd->pid);
  			}
  			*dst = '\0';
-@@ -12628,40 +11847,13 @@ static int wait_for_child_or_signal(struct pipe *waitfor_pipe, pid_t waitfor_pid
+@@ -12628,40 +11861,13 @@ static int wait_for_child_or_signal(struct pipe *waitfor_pipe, pid_t waitfor_pid
  		int sig;
  		sigset_t oldset;
  
@@ -4363,7 +4339,7 @@ index bc8d1e7..7b921a0 100644
  		/* if ECHILD, there are no children (ret is -1 or 0) */
  		/* if ret == 0, no children changed state */
  		/* if ret != 0, it's exitcode+1 of exited waitfor_pid child */
-@@ -12694,14 +11886,7 @@ static int wait_for_child_or_signal(struct pipe *waitfor_pipe, pid_t waitfor_pid
+@@ -12694,14 +11900,7 @@ static int wait_for_child_or_signal(struct pipe *waitfor_pipe, pid_t waitfor_pid
  		 */
   restore:
  		sigprocmask2(SIG_SETMASK, &oldset);
@@ -4379,7 +4355,7 @@ index bc8d1e7..7b921a0 100644
  		/* SIGCHLD, or no signal, or ignored one, such as SIGQUIT. Repeat */
  	}
  	return ret;
-@@ -12750,13 +11935,7 @@ static int FAST_FUNC builtin_wait(char **argv)
+@@ -12750,13 +11949,7 @@ static int FAST_FUNC builtin_wait(char **argv)
  				ret = 127; /* bash compat for bad jobspecs */
  				wait_pipe = parse_jobspec(*argv);
  				if (wait_pipe) {
@@ -4394,7 +4370,7 @@ index bc8d1e7..7b921a0 100644
  				}
  				/* else: parse_jobspec() already emitted error msg */
  				continue;
-@@ -12773,34 +11952,14 @@ static int FAST_FUNC builtin_wait(char **argv)
+@@ -12773,34 +11966,14 @@ static int FAST_FUNC builtin_wait(char **argv)
  		if (ret < 0) {
  			/* No */
  			ret = 127;
@@ -4433,7 +4409,7 @@ index bc8d1e7..7b921a0 100644
  	} while (*++argv);
  
  	return ret;
-@@ -12944,12 +12103,7 @@ static int FAST_FUNC builtin_memleak(char **argv UNUSED_PARAM)
+@@ -12944,12 +12117,7 @@ static int FAST_FUNC builtin_memleak(char **argv UNUSED_PARAM)
  	if (!G.memleak_value)
  		G.memleak_value = l;
  
@@ -4677,7 +4653,7 @@ index 56c7c5a..993730a 100644
  	/* Combined LCG + Galois LFSR rng has 2^32 * 2^32-1 period.
  	 * Strength:
 diff --git a/shell/shell_common.c b/shell/shell_common.c
-index f0ed000..c96ac49 100644
+index f0ed000..2a8acf9 100644
 --- a/shell/shell_common.c
 +++ b/shell/shell_common.c
 @@ -28,15 +28,13 @@ int FAST_FUNC varcmp(const char *p, const char *q)
@@ -4933,7 +4909,7 @@ index f0ed000..c96ac49 100644
  		/* Use the remainder as a value for the next variable */
  		params->setvar(*argv, buffer);
  		/* Set the rest to "" */
-@@ -481,10 +372,10 @@ static const char limit_chars[] ALIGN1 =
+@@ -483,7 +374,7 @@ static const char limit_chars[] ALIGN1 =
  ;
  
  /* "-": treat args as parameters of option with ASCII code 1 */
@@ -4942,9 +4918,6 @@ index f0ed000..c96ac49 100644
  			"c::"
  			"d::"
  #ifdef RLIMIT_NICE
- 			"e::"
- #endif
- 			"f::"
 @@ -534,18 +425,9 @@ enum {
  static void printlim(unsigned opts, const struct rlimit *limit,
  			const struct limits *l)

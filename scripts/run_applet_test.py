@@ -5584,7 +5584,8 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
                 "eval; eval 'echo eval_single' >/dev/null; eval echo eval_multi 1 >/dev/null; "
                 "eval 'echo ok\\' >/dev/null; "
                 "echo $(trap) $(trap -p) >/dev/null; "
-                "A_EXP=123 B_EXP=$A_EXP C_EXP=$A_EXP true; "
+                "A_EXP=123 B_EXP=$A_EXP:$UNSET_EXP C_EXP=$A_EXP true; "
+                "eval 'echo ok # comment_at_eof' >/dev/null; "
                 "A_EMPTY=1 $(true); "
                 "exec 7>/dev/null; exec 7>&-; "
                 "exec; (exec echo exec_applet >/dev/null); "
@@ -5600,6 +5601,8 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
                 "myfn argA || echo fn_rc=$?; "
                 "myfn | cat; (myfn) || true; true | gfn() { echo g; }; "
                 "{ echo piped_grp; } | cat >/dev/null; "
+                "# comment_before_group\n"
+                "{ LC_ALL=C true -v; } >/dev/null 2>&1; "
                 "(true && true & wait); "
                 "true | ONLY_ASSIGN_PIPE=1 | true; "
                 "EMPTY_CMD=''; $EMPTY_CMD ONLY_ASSIGN_VAR=1; "
@@ -5837,6 +5840,7 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
         "a b () { :; }",
         "a (b) { :; }",
         "{ echo a; }bad",
+        "{ echo a; } bad",
         "true | ! true",
         "echo >",
         "echo >>",
