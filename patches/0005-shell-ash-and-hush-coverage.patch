@@ -4061,18 +4061,14 @@ index bc8d1e7..7b921a0 100644
  
  	/* PS1/PS2/HISTFILE are set later, if we determine that we are interactive */
  
-@@ -11102,9 +10438,9 @@ int hush_main(int argc, char **argv)
+@@ -11102,6 +10438,7 @@ int hush_main(int argc, char **argv)
  	/* Parse options */
  	/* http://www.opengroup.org/onlinepubs/9699919799/utilities/sh.html */
  	flags = (argv[0] && argv[0][0] == '-') ? OPT_login : 0;
 +	GETOPT_RESET();
  	while (1) {
--		int opt = getopt(argc, argv, "+" /* stop at 1st non-option */
--				"cexinsl"
-+		int opt = getopt(argc, argv, "cexinsl"
- #if !BB_MMU
- 				"$:R:V:"
- # if ENABLE_HUSH_LINENO_VAR
+ 		int opt = getopt(argc, argv, "+" /* stop at 1st non-option */
+ 				"cexinsl"
 @@ -11125,9 +10461,7 @@ int hush_main(int argc, char **argv)
  			G.opt_c = 1;
  			break;
@@ -4266,29 +4262,6 @@ index bc8d1e7..7b921a0 100644
  	if (opts == 3) {
  		bb_simple_error_msg("unset: -v and -f are exclusive");
  		return EXIT_FAILURE;
-@@ -12201,12 +11450,7 @@ Test that VAR is a valid variable name?
- 		my_opterr = (!cp || NOT_LONE_CHAR(cp, '0'));
- 	}
- 
--	/* getopts stops on first non-option. Add "+" to force that */
--	/*if (optstring[0] != '+')*/ {
--		char *s = alloca(strlen(optstring) + 2);
--		sprintf(s, "+%s", optstring);
--		optstring = s;
--	}
-+
- 
- 	/* Naively, now we should just
- 	 *	cp = get_local_var_value("OPTIND");
-@@ -12261,7 +11505,7 @@ Test that VAR is a valid variable name?
- 		/* If ":optstring" and unknown option is seen,
- 		 * it is stored to OPTARG.
- 		 */
--		if (optstring[1] == ':') {
-+		if (optstring[0] == ':') {
- 			cbuf[0] = optopt;
- 			cp = cbuf;
- 		}
 @@ -12474,11 +11718,7 @@ static int FAST_FUNC builtin_jobs(char **argv UNUSED_PARAM)
  
  	checkjobs(NULL, 0 /*(no pid to wait for)*/);
