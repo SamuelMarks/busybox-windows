@@ -2,7 +2,15 @@ diff --git a/include/libbb.h b/include/libbb.h
 index 43a44e1..d97957d 100644
 --- a/include/libbb.h
 +++ b/include/libbb.h
-@@ -649,7 +649,7 @@ void signal_no_SA_RESTART_empty_mask(int sig, void (*handler)(int)) FAST_FUNC;
+@@ -16,6 +16,7 @@
+ #include <dirent.h>
+ #include <errno.h>
+ #include <fcntl.h>
++#include <getopt.h>
+ #include <inttypes.h>
+ #include <netdb.h>
+ #include <setjmp.h>
+@@ -649,7 +650,7 @@ void signal_no_SA_RESTART_empty_mask(int sig, void (*handler)(int)) FAST_FUNC;
  /* syscalls like read() won't be interrupted (though select/poll will be): */
  void signal_SA_RESTART_empty_mask(int sig, void (*handler)(int)) FAST_FUNC;
  void wait_for_any_sig(void) FAST_FUNC;
@@ -11,7 +19,7 @@ index 43a44e1..d97957d 100644
  void sig_block(int sig) FAST_FUNC;
  void sig_unblock(int sig) FAST_FUNC;
  /* Will do sigaction(signum, act, NULL): */
-@@ -738,10 +738,7 @@ typedef struct connection {
+@@ -738,10 +739,7 @@ typedef struct connection {
  	STRUCT_CONNECTION
  } connection_t;
  
@@ -23,7 +31,7 @@ index 43a44e1..d97957d 100644
  
  void FAST_FUNC conn_close_fds(connection_t *conn);
  void FAST_FUNC conn_close_fds_remove_and_free(connection_t *conn);
-@@ -754,11 +751,7 @@ static ALWAYS_INLINE void free_ioloop_state(ioloop_state_t *io)
+@@ -754,11 +752,7 @@ static ALWAYS_INLINE void free_ioloop_state(ioloop_state_t *io)
  {
  	free(io);
  }
@@ -36,7 +44,7 @@ index 43a44e1..d97957d 100644
  
  void FAST_FUNC ioloop_insert_conn(ioloop_state_t *io, connection_t *conn);
  void FAST_FUNC ioloop_remove_conn(ioloop_state_t *io, connection_t *conn);
-@@ -1418,13 +1411,8 @@ int find_applet_by_name(const char *name) FAST_FUNC;
+@@ -1418,13 +1412,8 @@ int find_applet_by_name(const char *name) FAST_FUNC;
  void run_applet_no_and_exit(int a, const char *name, char **argv) NORETURN FAST_FUNC;
  #endif
  void show_usage_if_dash_dash_help(int applet_no, char **argv) FAST_FUNC;
@@ -52,7 +60,7 @@ index 43a44e1..d97957d 100644
  void exit_SUCCESS(void) NORETURN FAST_FUNC;
  void _exit_SUCCESS(void) NORETURN FAST_FUNC;
  void exit_FAILURE(void) NORETURN FAST_FUNC;
-@@ -1521,10 +1509,10 @@ uint32_t getopt32long(char **argv, const char *optstring, const char *longopts,
+@@ -1521,10 +1510,10 @@ uint32_t getopt32long(char **argv, const char *optstring, const char *longopts,
   * By ~2008, OpenBSD 3.4 was changed to survive glibc-like optind = 0
   * (to interpret it as if optreset was set).
   */
@@ -66,7 +74,7 @@ index 43a44e1..d97957d 100644
  #endif
  
  
-@@ -2667,23 +2655,10 @@ static ALWAYS_INLINE int bb_ascii_isalnum(unsigned char a)
+@@ -2667,23 +2656,10 @@ static ALWAYS_INLINE int bb_ascii_isalnum(unsigned char a)
  	b = (a|0x20) - 'a';
  	return b <= 'z' - 'a';
  }
