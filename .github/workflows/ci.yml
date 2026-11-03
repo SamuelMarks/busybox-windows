@@ -1,10 +1,11 @@
 # =============================================================================
-# .github/workflows/release.yml - CI/CD Pipeline for BusyBox Windows
+# .github/workflows/ci.yml - CI/CD Pipeline for BusyBox Windows
 #
 # Runs Python static analysis (ruff, interrogate, mypy --strict, pytest 100%
-# branch coverage, pre-commit), compiles BusyBox natively with MSVC on
-# windows-latest, executes the CTest functional applet verification suite, and
-# packages portable ZIP and NSIS installers via CPack.
+# branch coverage, pre-commit), compiles BusyBox natively with MSVC (x86_64) on
+# windows-latest, executes the CTest functional applet verification suite,
+# packages portable ZIP, NSIS (.exe), and WiX (.msi) installers via CPack, and
+# publishes release assets to GitHub Releases on v* tags.
 # =============================================================================
 
 name: Build and Release BusyBox Windows
@@ -139,17 +140,55 @@ jobs:
           echo "$nsisPath" >> $env:GITHUB_PATH
           & "$nsisPath\makensis.exe" /VERSION
 
-      - name: Package with CPack
-        shell: cmd
+      - name: Install WiX Toolset
+        shell: pwsh
         run: |
-          cd build
-          cpack -C Release -G ZIP
-          cpack -C Release -G NSIS
+          if (-not ($env:WIX -and (Test-Path "$env:WIX\bin\candle.exe")) -and -not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset -y
+          }
+          $wixBin = if ($env:WIX -and (Test-Path "$env:WIX\bin\candle.exe")) {
+            "$env:WIX\bin"
+          } else {
+            (Get-ChildItem "${env:ProgramFiles(x86)}\WiX Toolset*\bin\candle.exe", "$env:ProgramFiles\WiX Toolset*\bin\candle.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName
+          }
+          if ($wixBin) {
+            echo "$wixBin" >> $env:GITHUB_PATH
+            & "$wixBin\candle.exe" -? | Select-Object -First 1
+          }
+
+      - name: Package with CPack
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like "refs/tags/*") {
+            $env:GITHUB_REF_NAME -replace '^v', ''
+          } else {
+            "1.39.0"
+          }
+          $pkgVersion = if ($version -match '^\d+\.\d+\.\d+(\.\d+)?$') { $version } else { "1.39.0" }
+          $fileName = "busybox-$version-$($env:RUNNER_ARCH)"
+          Push-Location build
+          cpack -C Release -G ZIP -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$fileName"
+          cpack -C Release -G NSIS -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$fileName"
+          cpack -C Release -G WIX -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$fileName"
+          Pop-Location
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: busybox-windows-packages
+          name: busybox-windows-${{ runner.arch }}-packages
           path: |
-            build/*.zip
-            build/*.exe
+            build/busybox-*-${{ runner.arch }}.zip
+            build/busybox-*-${{ runner.arch }}.exe
+            build/busybox-*-${{ runner.arch }}.msi
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: BusyBox for Windows ${{ github.ref_name }}
+          files: |
+            build/busybox-*-${{ runner.arch }}.exe
+            build/busybox-*-${{ runner.arch }}.msi
+            build/busybox-*-${{ runner.arch }}.zip
+          generate_release_notes: true

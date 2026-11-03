@@ -2,7 +2,7 @@ BusyBox Windows Native (MSVC) Builds
 ====================================
 
 [![License](https://img.shields.io/badge/license-CC0%20OR%20Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build and Release BusyBox Windows](https://github.com/SamuelMarks/busybox-windows/actions/workflows/release.yml/badge.svg)](https://github.com/SamuelMarks/busybox-windows/actions/workflows/release.yml)
+[![CI](https://github.com/SamuelMarks/busybox-windows/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/busybox-windows/actions/workflows/ci.yml)
 
 This repository provides **native Windows builds** of [BusyBox](https://busybox.net/)—"The Swiss Army Knife of Embedded Linux"—compiled with Microsoft Visual C++ (MSVC) and CMake.
 
