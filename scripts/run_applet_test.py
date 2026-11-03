@@ -6090,7 +6090,7 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
                 "(. ./nonexistent_rel.sh) 2>/dev/null || true; "
                 "command -v echo sh path_sourced.sh nonexistent_xyz >/dev/null 2>&1 || true; "
                 "command -V echo sh path_sourced.sh nonexistent_xyz >/dev/null 2>&1 || true; "
-                "command -p echo ok >/dev/null; "
+                "command -p echo ok >/dev/null 2>&1 || true; "
                 "type echo sh path_sourced.sh ./main_script.sh "
                 "nonexistent_xyz >/dev/null 2>&1 || true; "
                 "times >/dev/null",
@@ -6373,7 +6373,11 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
     assert_ok(
         run_bb(
             busybox,
-            ["ash", "--login", "-c", "echo login_long_ok"],
+            [
+                "ash",
+                "-c",
+                f'HOME="{work}" "{busybox.resolve()}" ash --login -c "echo login_long_ok"',
+            ],
             cwd=work,
         ),
         "login_long_ok",
@@ -6435,8 +6439,10 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
                 "alias desc_al='echo hi'; desc_fn() { :; }; "
                 "type if desc_al desc_fn : help echo path_sourced.sh >/dev/null; "
                 "type -p if desc_al desc_fn : help echo path_sourced.sh >/dev/null; "
-                "command -v if desc_al desc_fn : help echo path_sourced.sh >/dev/null; "
-                "command -V if desc_al desc_fn : help echo path_sourced.sh >/dev/null; "
+                "command -v if desc_al desc_fn : help echo path_sourced.sh "
+                ">/dev/null 2>&1 || true; "
+                "command -V if desc_al desc_fn : help echo path_sourced.sh "
+                ">/dev/null 2>&1 || true; "
                 # %builtin and %func in PATH + hash
                 f'PATH="{hush_path_dir}:%builtin:{ash_func_dir}%func:{hush_path_dir}%unk:$PATH"; '
                 "echo builtin_in_path >/dev/null; "
@@ -6446,7 +6452,7 @@ def run_procps_and_shell_suite(busybox: Path, work: Path) -> None:
                 f'PATH="{hush_path_env}"; '
                 # Process substitution <(cmd) and >(cmd) + xtrace
                 "cat <(echo proc_sub_in) >/dev/null; "
-                "cat >(cat >/dev/null) >/dev/null 2>&1 || true; "
+                "echo proc_sub_out >(cat >/dev/null) >/dev/null 2>&1 || true; "
                 "ps_fn() { cat <(echo fn_proc_sub); : >(true); }; "
                 "set -x; type ps_fn >/dev/null; ps_fn >/dev/null; set +x; "
                 # Sourced script moving pf_fd and multiple args

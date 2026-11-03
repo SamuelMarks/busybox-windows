@@ -1370,7 +1370,7 @@ index d1f7680..c45944e 100644
  	doexit(EXIT_SUCCESS);
  }
 diff --git a/networking/telnetd.c b/networking/telnetd.c
-index eca4e51..6a5be84 100644
+index eca4e51..677f2e8 100644
 --- a/networking/telnetd.c
 +++ b/networking/telnetd.c
 @@ -188,27 +188,9 @@ struct globals {
@@ -1823,7 +1823,7 @@ index eca4e51..6a5be84 100644
  }
  
  static pty_to_net_t *new_pty_to_net(int from, int to)
-@@ -852,11 +621,13 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+@@ -852,11 +621,12 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
  	const int sockwr = sockrd != 0 ? sockrd : 1;
  	const char *login_argv[2];
  	struct termios termbuf;
@@ -1833,12 +1833,11 @@ index eca4e51..6a5be84 100644
  
  	/* Got a new connection, set up a pty */
  	ptyfd = xgetpty(tty_name);
-+	slave_fd = xopen(tty_name, O_RDWR);
-+	close(atoi(tty_name + 8));
++	slave_fd = atoi(tty_name + 8);
  	ndelay_on(ptyfd);
  	close_on_exec_on(ptyfd);
  
-@@ -893,17 +664,12 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+@@ -893,17 +663,12 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
  
  	fflush_all();
  	pid = vfork(); /* NOMMU-friendly */
@@ -1857,7 +1856,7 @@ index eca4e51..6a5be84 100644
  		to_net = new_pty_to_net(ptyfd, sockwr);
  		to_pty = new_net_to_pty(sockrd, ptyfd);
  		dbg("to_net:%p to_pty:%p", to_net, to_pty);
-@@ -929,23 +695,11 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+@@ -929,23 +694,11 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
  	/* Open the child's side of the pty */
  	/* NB: setsid() disconnects from any previous ctty's. Therefore
  	 * we must open child's side of the tty AFTER setsid! */
@@ -1882,7 +1881,7 @@ index eca4e51..6a5be84 100644
  	/* The pseudo-terminal allocated to the client is configured to operate
  	 * in cooked mode, and with XTABS CRMOD enabled (see tty(4)) */
  	tcgetattr(0, &termbuf);
-@@ -975,7 +729,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
+@@ -975,7 +728,7 @@ static void make_new_session(ioloop_state_t *io, int sockrd)
  	BB_EXECVP(G.loginpath, (char **)login_argv);
  	/* _exit is safer with vfork, and we shouldn't send message
  	 * to remote clients anyway */
@@ -1891,7 +1890,7 @@ index eca4e51..6a5be84 100644
  }
  
  
-@@ -994,15 +748,11 @@ static int accept_conn__accept(void *this)
+@@ -994,15 +747,11 @@ static int accept_conn__accept(void *this)
  	struct accept_conn *ts = this;
  	int fd;
  
@@ -1911,7 +1910,7 @@ index eca4e51..6a5be84 100644
  }
  
  static int accept_conn__return_zero(void *this UNUSED_PARAM)
-@@ -1027,24 +777,8 @@ static void handle_sigchld(int sig UNUSED_PARAM)
+@@ -1027,24 +776,8 @@ static void handle_sigchld(int sig UNUSED_PARAM)
  {
  	int save_errno = errno;
  
@@ -1938,7 +1937,7 @@ index eca4e51..6a5be84 100644
  
  	errno = save_errno;
  }
-@@ -1691,7 +1425,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+@@ -1691,7 +1424,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
  		}
  	}
  	/* Redirect log to syslog early, if needed */
@@ -1947,7 +1946,7 @@ index eca4e51..6a5be84 100644
  		openlog(applet_name, LOG_PID, LOG_DAEMON);
  		logmode = LOGMODE_SYSLOG;
  	}
-@@ -1701,18 +1435,13 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+@@ -1701,18 +1434,13 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
  	}
  #if ENABLE_FEATURE_TELNETD_STANDALONE
  	else {
@@ -1973,7 +1972,7 @@ index eca4e51..6a5be84 100644
  		close_on_exec_on(master_fd);
  		ioloop_insert_conn(&G.io, (void *)new_accept_conn(master_fd));
  	}
-@@ -1730,25 +1459,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
+@@ -1730,25 +1458,7 @@ int telnetd_main(int argc UNUSED_PARAM, char **argv)
  		G.io.max_timeout = (UINT_MAX / 1000000);
  	G.io.max_timeout *= 1000000;
  #endif
