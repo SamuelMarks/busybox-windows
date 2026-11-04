@@ -2,12 +2,13 @@
 # .pre-commit-config.yaml - Pre-Commit Quality, Typing, Coverage & Hygiene Gates
 #
 # Enforces:
-#   - Line endings (LF for Unix/source files, CRLF for Windows .bat/.cmd files)
+#   - Line endings (LF for Unix/source files, CRLF for Windows .bat/.cmd/.ps1 files)
 #   - Trailing whitespace, EOF newline, YAML/TOML syntax, merge/case conflicts
 #   - Prohibition of any .c or .h files inside busybox-windows
 #   - 100% Python docstring coverage (ruff D rules + interrogate)
 #   - Strict static typing (ruff ANN rules + mypy --strict)
 #   - 100% Python unit test line, branch, and function coverage (pytest --cov)
+#   - Automatic README.md '% doc coverage' and '% test coverage' shield updates
 # =============================================================================
 
 repos:
@@ -15,14 +16,14 @@ repos:
     rev: v5.0.0
     hooks:
       - id: mixed-line-ending
-        name: dos2unix (enforce LF)
+        name: Enforce LF line endings (dos2unix)
         args: [--fix=lf]
-        exclude: '(?i)(\.(cmd|bat)$)'
+        exclude: '(?i)(\.(cmd|bat|ps1|sln|vcxproj|filters)$)'
 
       - id: mixed-line-ending
-        name: unix2dos (enforce CRLF)
+        name: Enforce CRLF line endings for Windows scripts (unix2dos)
         args: [--fix=crlf]
-        files: '(?i)(\.(cmd|bat)$)'
+        files: '(?i)(\.(cmd|bat|ps1|sln|vcxproj|filters)$)'
 
       - id: check-yaml
       - id: check-toml
@@ -30,9 +31,9 @@ repos:
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: end-of-file-fixer
-        exclude: '(?i)(\.(cmd|bat|patch|diff)$)'
+        exclude: '(?i)(\.(cmd|bat|ps1|patch|diff)$)'
       - id: trailing-whitespace
-        exclude: '(?i)(\.(cmd|bat|patch|diff)$)'
+        exclude: '(?i)(\.(cmd|bat|ps1|patch|diff)$)'
 
   - repo: local
     hooks:
@@ -76,3 +77,17 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+
+      - id: doc-coverage-shield
+        name: Add/update '% doc coverage' shield in README.md
+        entry: python3 -m scripts.update_coverage_shields --doc
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: test-coverage-shield
+        name: Add/update '% test coverage' shield in README.md
+        entry: python3 -m scripts.update_coverage_shields --test
+        language: system
+        pass_filenames: false
+        always_run: true

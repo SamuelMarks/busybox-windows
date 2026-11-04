@@ -3,6 +3,8 @@ BusyBox Windows Native (MSVC) Builds
 
 [![License](https://img.shields.io/badge/license-CC0%20OR%20Apache--2.0%20OR%20MIT-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![CI](https://github.com/SamuelMarks/busybox-windows/actions/workflows/ci.yml/badge.svg)](https://github.com/SamuelMarks/busybox-windows/actions/workflows/ci.yml)
+![Doc Coverage](https://img.shields.io/badge/doc%20coverage-100%25-brightgreen)
+![Test Coverage](https://img.shields.io/badge/test%20coverage-100%25-brightgreen)
 
 This repository provides **native Windows builds** of [BusyBox](https://busybox.net/)—"The Swiss Army Knife of Embedded Linux"—compiled with Microsoft Visual C++ (MSVC) and CMake.
 
@@ -40,8 +42,10 @@ By separating POSIX/Linux platform polyfills from the BusyBox build harness:
 Pre-compiled packages are available on the [Releases](../../releases) tab.
 
 ### Included Packages:
-- **NSIS Setup Installer (`BusyBox-*-win64.exe`):** Windows installer with option to add BusyBox to the system PATH.
-- **Portable ZIP Archive (`BusyBox-*-win64.zip`):** Standalone archive containing `busybox.exe` and documentation.
+- **Standalone Executable (`busybox-*-X64.exe`):** Raw single-file native Windows binary ready to run directly without installation.
+- **NSIS Setup Installer (`busybox-*-X64-setup.exe`):** Windows installer with option to add BusyBox to the system PATH.
+- **WiX MSI Installer (`busybox-*-X64.msi`):** Windows Installer package for enterprise and automated deployments.
+- **Portable ZIP Archive (`busybox-*-X64.zip`):** Standalone archive containing `busybox.exe` and documentation.
 
 ---
 

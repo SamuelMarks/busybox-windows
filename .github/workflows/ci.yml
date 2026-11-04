@@ -8,7 +8,7 @@
 # publishes release assets to GitHub Releases on v* tags.
 # =============================================================================
 
-name: Build and Release BusyBox Windows
+name: CI
 
 on:
   push:
@@ -129,7 +129,7 @@ jobs:
           interrogate --fail-under=100 -vv scripts tests
           mypy --strict scripts tests
           pytest --no-cov
-          $env:SKIP = "pytest-coverage"
+          $env:SKIP = "pytest-coverage,test-coverage-shield"
           pre-commit run --all-files
 
       - name: Install NSIS
@@ -166,10 +166,12 @@ jobs:
           }
           $pkgVersion = if ($version -match '^\d+\.\d+\.\d+(\.\d+)?$') { $version } else { "1.39.0" }
           $fileName = "busybox-$version-$($env:RUNNER_ARCH)"
+          $setupFileName = "busybox-$version-$($env:RUNNER_ARCH)-setup"
           Push-Location build
           cpack -C Release -G ZIP -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$fileName"
-          cpack -C Release -G NSIS -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$fileName"
+          cpack -C Release -G NSIS -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$setupFileName"
           cpack -C Release -G WIX -D "CPACK_PACKAGE_VERSION=$pkgVersion" -D "CPACK_PACKAGE_FILE_NAME=$fileName"
+          Copy-Item "Release\busybox.exe" -Destination "$fileName.exe" -Force
           Pop-Location
 
       - name: Upload Artifacts
@@ -177,18 +179,20 @@ jobs:
         with:
           name: busybox-windows-${{ runner.arch }}-packages
           path: |
-            build/busybox-*-${{ runner.arch }}.zip
             build/busybox-*-${{ runner.arch }}.exe
+            build/busybox-*-${{ runner.arch }}-setup.exe
             build/busybox-*-${{ runner.arch }}.msi
+            build/busybox-*-${{ runner.arch }}.zip
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: BusyBox for Windows ${{ github.ref_name }}
           files: |
             build/busybox-*-${{ runner.arch }}.exe
+            build/busybox-*-${{ runner.arch }}-setup.exe
             build/busybox-*-${{ runner.arch }}.msi
             build/busybox-*-${{ runner.arch }}.zip
           generate_release_notes: true

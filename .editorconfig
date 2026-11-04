@@ -1,3 +1,4 @@
+# editorconfig.org
 root = true
 
 [*]
@@ -8,8 +9,8 @@ trim_trailing_whitespace = true
 indent_style = space
 indent_size = 4
 
-# Windows batch files prefer CRLF
-[*.{bat,cmd}]
+# Windows batch, PowerShell, and Visual Studio files prefer CRLF
+[*.{bat,cmd,ps1,sln,vcxproj,filters}]
 end_of_line = crlf
 
 # Patch files MUST use LF and should NEVER have trailing whitespace trimmed
@@ -19,13 +20,26 @@ end_of_line = lf
 trim_trailing_whitespace = false
 insert_final_newline = false
 
-# Web/Config files usually prefer 2 spaces
-[*.{json,yml,yaml,xml,md}]
+# Python files (PEP 8: 4 spaces, 100 char max line length)
+[*.py]
+indent_style = space
+indent_size = 4
+max_line_length = 100
+
+# Web/Config/Workflow files prefer 2 spaces
+[*.{json,toml,yml,yaml,xml,md}]
+indent_style = space
 indent_size = 2
 
 # CMake files
 [CMakeLists.txt]
+indent_style = space
 indent_size = 4
 
 [*.cmake]
+indent_style = space
 indent_size = 4
+
+# Makefiles require tab indentation
+[Makefile]
+indent_style = tab

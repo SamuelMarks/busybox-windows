@@ -63,6 +63,7 @@ echo Packaging with CPack...
 cd %BUILD_DIR%
 cpack -C Release -G ZIP
 cpack -C Release -G NSIS
+cpack -C Release -G WIX
 cd ..
 
 echo Build and packaging complete!
