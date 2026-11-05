@@ -2523,7 +2523,7 @@ index 9b03bb8..9f14fbf 100644
 -			 || !(flags & FILEUTILS_RECUR)
 -			 || ((stat(path, &st) < 0) || !S_ISDIR(st.st_mode))
 +			if (!(flags & FILEUTILS_RECUR)
-+			 || !S_ISDIR((stat(path, &st), st.st_mode))
++			 || !S_ISDIR((st.st_mode = 0, stat(path, &st), st.st_mode))
  			) {
  				fail_msg = "create";
  				break;
