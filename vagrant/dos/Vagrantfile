@@ -1,0 +1,844 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# ## Overview
+# Configuration and definition file for the Microsoft MS-DOS (`1.25`, `2.0`, and `4.0`)
+# multi-machine Vagrant environment (`msdos-1.25`, `msdos-2.0`, `msdos-4.0`) with
+# automated **OpenWatcom v2** toolchain provisioning and a scripted **CMake + CTest**
+# build-and-test pipeline for `busybox`.
+#
+# ## Building the Base Images (`bento/msdos-1.25`, `bento/msdos-2.0`, `bento/msdos-4.0`)
+# This Vagrantfile uses the `bento/msdos-1.25`, `bento/msdos-2.0`, and `bento/msdos-4.0`
+# base boxes. If the boxes are not yet registered in `vagrant box list`, build and
+# register them from the sibling `bento` repository:
+# ```sh
+# cd ../../../bento
+# for v in 1.25 2.0 4.0; do
+#   MSDOS_VERSION=$v ./msdos-builder.sh all
+# done
+# ```
+#
+# ## Usage
+# ```sh
+# cd vagrant/dos
+# vagrant up msdos-1.25
+# vagrant up msdos-2.0
+# vagrant up msdos-4.0
+# ```
+
+require "fileutils"
+require "rbconfig"
+require "socket"
+require "base64"
+require "digest"
+require "securerandom"
+require "tempfile"
+require "timeout"
+
+# Auto-load the Bento MS-DOS Vagrant plugin suite (communicator, ssh polyfill, synced_folder)
+begin
+  require "bento/vagrant_msdos"
+rescue LoadError
+  [
+    File.expand_path("../../../bento/lib", __dir__),
+    File.expand_path("../../../../bento/lib", __dir__),
+    File.expand_path("lib", __dir__)
+  ].each do |bento_lib|
+    if File.directory?(bento_lib) && !$LOAD_PATH.include?(bento_lib)
+      $LOAD_PATH.unshift(bento_lib)
+    end
+  end
+  begin
+    require "bento/vagrant_msdos"
+  rescue LoadError
+    # Fallback if running without the Bento MS-DOS plugin installed
+  end
+end
+
+if defined?(Bento::VagrantMsdos::Plugin) && defined?(Vagrant)
+  Bento::VagrantMsdos::Plugin.register_with_vagrant!(Vagrant)
+end
+
+# Extend Bento::VagrantMsdos::Communicator with multi-machine port resolution,
+# 32-bit LE executable preservation on MS-DOS 1.25, and clean boot readiness polling.
+if defined?(Bento::VagrantMsdos)
+  Bento::VagrantMsdos::Communicator.class_eval do
+    if method_defined?(:align_mz_header_for_dos125) && !method_defined?(:orig_align_mz_header_for_dos125)
+      alias_method :orig_align_mz_header_for_dos125, :align_mz_header_for_dos125
+    end
+
+    # Preserves 32-bit Linear Executables (`LE`/`LX`/`NE`/`PE` such as `JQ.EXE`)
+    # intact when uploading to MS-DOS 1.25 while still aligning pure 16-bit MZ headers.
+    def align_mz_header_for_dos125(raw_bytes)
+      bin = raw_bytes.to_s.b
+      if bin.bytesize >= 0x40 && bin.start_with?("MZ".b)
+        e_lfanew = bin[0x3C, 4].unpack1("V")
+        if e_lfanew.positive? && (e_lfanew + 2) <= bin.bytesize && %w[LE LX NE PE].include?(bin[e_lfanew, 2])
+          return bin
+        end
+      end
+      respond_to?(:orig_align_mz_header_for_dos125) ? orig_align_mz_header_for_dos125(bin) : bin
+    end
+
+    def msdos_config
+      cfg =
+        if @machine.respond_to?(:config) && @machine.config.respond_to?(:msdos)
+          @machine.config.msdos
+        else
+          Bento::VagrantMsdos::Config.new
+        end
+      cfg.finalize! if cfg.respond_to?(:finalize!) && cfg.host == Bento::VagrantMsdos::Config::UNSET_VALUE
+      if @machine.respond_to?(:name) && @machine.name
+        spec = MSDOSOpenWatcomCI::MSDOS_MACHINES.find { |s| s[:name] == @machine.name.to_s }
+        if spec
+          host = ENV["MSDOS_SERIAL_HOST"] || "127.0.0.1"
+          cfg.host = host
+          cfg.port = MSDOSOpenWatcomCI.resolve_serial_port(host, __dir__, spec[:name], spec[:default_port])
+          cfg.dos_version = spec[:dos_version]
+        end
+      end
+      cfg
+    end
+
+    def ready?
+      output = +""
+      code = execute("ECHO ===VAGRANT_PING===", error_check: false, timeout: 4) do |_type, data|
+        output << data
+      end
+      ok = (code == 0 && output.include?("===VAGRANT_PING==="))
+      close_socket if ok
+      ok
+    rescue StandardError
+      false
+    end
+
+    def wait_for_ready(timeout)
+      deadline = Time.now + timeout.to_f
+      sleep(2.5) if @socket.nil?
+      loop do
+        if ready?
+          close_socket
+          return true
+        end
+        if Time.now >= deadline
+          close_socket
+          return false
+        end
+
+        sleep(0.25)
+      end
+    end
+
+    # Override `upload_file` to use `SERGET.COM` high-speed raw serial stream decoding
+    def upload_file(from, to)
+      MSDOSOpenWatcomCI.fast_upload_file!(self, from, to)
+    end
+  end
+end
+
+# ---------------------------------------------------------------------------
+# OpenWatcom v2 & MS-DOS (1.25, 2.0, 4.0) CMake/CTest Helper Module
+# ---------------------------------------------------------------------------
+module MSDOSOpenWatcomCI
+  DEFAULT_OW_URL = "https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz"
+  BS   = [92].pack("C").freeze
+  CRLF = [13, 10].pack("C*").freeze
+  NL   = "#{BS}n".freeze
+
+  # Machine specifications for MS-DOS 1.25, 2.0, and 4.0
+  MSDOS_MACHINES = [
+    {
+      name: "msdos-1.25",
+      box: "bento/msdos-1.25",
+      dos_version: "1.25",
+      default_port: 2324,
+      primary: false
+    },
+    {
+      name: "msdos-2.0",
+      box: "bento/msdos-2.0",
+      dos_version: "2.0",
+      default_port: 2325,
+      primary: false
+    },
+    {
+      name: "msdos-4.0",
+      box: "bento/msdos-4.0",
+      dos_version: "4.0",
+      default_port: 2326,
+      primary: true
+    }
+  ].freeze
+
+  module_function
+
+  # Checks whether a local TCP port is currently bound by an existing server.
+  def port_in_use?(host, port)
+    server = TCPServer.new(host, port)
+    server.close
+    false
+  rescue Errno::EADDRINUSE, Errno::EACCES
+    true
+  rescue StandardError
+    false
+  end
+
+  # Checks whether this Vagrant machine's QEMU instance is currently alive.
+  def machine_qemu_running?(base_dir, machine_name)
+    id_file = File.join(base_dir, ".vagrant", "machines", machine_name.to_s, "qemu", "id")
+    return false unless File.exist?(id_file)
+
+    vm_id = File.read(id_file).strip
+    return false if vm_id.empty?
+
+    pid_file = File.expand_path("~/.vagrant.d/tmp/vagrant-qemu/#{vm_id}/qemu.pid")
+    return false unless File.exist?(pid_file)
+
+    pid = File.read(pid_file).strip.to_i
+    return false if pid <= 0
+
+    Process.kill(0, pid)
+    true
+  rescue Errno::ESRCH
+    false
+  rescue Errno::EPERM
+    true
+  rescue StandardError
+    false
+  end
+
+  # Resolves the serial TCP port to use for a specific MS-DOS guest machine.
+  def resolve_serial_port(host, base_dir, machine_name, default_port = 2324)
+    env_key = "MSDOS_SERIAL_PORT_#{machine_name.tr('.-', '_').upcase}"
+    return ENV[env_key].to_i if ENV[env_key] && !ENV[env_key].strip.empty?
+    return ENV["MSDOS_SERIAL_PORT"].to_i if ENV["MSDOS_SERIAL_PORT"] && !ENV["MSDOS_SERIAL_PORT"].strip.empty?
+
+    @resolved_ports ||= {}
+    return @resolved_ports[machine_name] if @resolved_ports.key?(machine_name)
+
+    port_file = File.join(base_dir, ".vagrant", "msdos_serial_port_#{machine_name}")
+    if File.exist?(port_file)
+      saved = File.read(port_file).strip.to_i
+      if saved > 0 && (machine_qemu_running?(base_dir, machine_name) || !port_in_use?(host, saved))
+        return @resolved_ports[machine_name] = saved
+      end
+    end
+
+    candidates = [0, 10_000, 20_000, 30_000].map { |offset| default_port + offset }
+    chosen = candidates.find { |cand| !port_in_use?(host, cand) } || (default_port + 10_000)
+    FileUtils.mkdir_p(File.dirname(port_file))
+    File.write(port_file, chosen.to_s)
+    @resolved_ports[machine_name] = chosen
+  end
+
+  # Resolves the host-specific OpenWatcom binary subdirectory inside `WATCOM`.
+  #
+  # - macOS arm64   -> `armo64` (falls back to `bino64`)
+  # - macOS x86_64  -> `bino64`
+  # - Linux arm64   -> `arml64` (falls back to `arml`)
+  # - Linux x86_64  -> `binl64` (falls back to `binl`)
+  # - Windows x64   -> `binnt64` (falls back to `binnt`)
+  def host_bin_subdir(watcom_root)
+    host_os  = RbConfig::CONFIG["host_os"].to_s.downcase
+    host_cpu = RbConfig::CONFIG["host_cpu"].to_s.downcase
+    is_arm   = host_cpu.include?("arm") || host_cpu.include?("aarch64")
+
+    candidates =
+      if host_os.include?("darwin")
+        is_arm ? %w[armo64 bino64] : %w[bino64 armo64]
+      elsif host_os =~ /mswin|mingw|cygwin/
+        %w[binnt64 binnt]
+      else
+        is_arm ? %w[arml64 arml binl64 binl] : %w[binl64 binl]
+      end
+
+    found = candidates.find { |sub| File.directory?(File.join(watcom_root, sub)) }
+    found || candidates.first
+  end
+
+  # Resolves the path where OpenWatcom v2 is or should be installed on the host.
+  def resolve_watcom_root(base_dir)
+    return ENV["WATCOM"] if ENV["WATCOM"] && !ENV["WATCOM"].strip.empty?
+
+    candidates = [
+      File.join(base_dir, ".watcom"),
+      File.expand_path("../../../c-ci/vagrant/freedos/.watcom", base_dir),
+      "/opt/watcom",
+      "/usr/bin/watcom",
+      File.expand_path("~/watcom"),
+      "C:/WATCOM",
+      "C:/usr/WATCOM"
+    ]
+    existing = candidates.find { |dir| File.directory?(File.join(dir, "h")) }
+    existing || File.join(base_dir, ".watcom")
+  end
+
+  # Patches a copy of `dos32a.exe` so that the 32-bit DOS/32A protected-mode
+  # extender runs cleanly across MS-DOS 1.25, MS-DOS 2.0, and MS-DOS 4.0:
+  # 1. Relaxes the `INT 21h AH=30h` DOS >= 4.0 version check (`0x15f`).
+  # 2. Reads the saved PSP segment directly from `DS:[0x306c]` instead of calling
+  #    DOS 3.0+ `INT 21h AH=51h` (`0x0ac6`).
+  # 3. Skips invalid `PSP:[002Ch]` environment selector creation and fixes the
+  #    `jz 0xadf` (`mov ax, si`) jump offset (`0x0ad1..0x0ad7`).
+  # 4. Skips rewriting the DOS 3.0+ `argv[0]` tail inside `PSP:[002Ch]` (`0x371a`).
+  # 5. Opens `"DOS32A.EXE"` directly at `0x3796` instead of scanning `PSP:[002Ch]`
+  #    for the DOS 3.0+ self-executable path.
+  # 6. Uses standard read-only mode `AL=00h` (`0x3d00`) instead of DOS 3.0+
+  #    `OPEN_SHARE_DENYNONE` (`0x3dc0`) at `0x3827` and `0x3863`.
+  def patch_dos32a_for_legacy_dos(raw_bytes)
+    d32 = raw_bytes.to_s.b.dup
+    return d32 unless d32.bytesize >= 0x4000 && d32[0x15b, 4] == "\xb4\x30\xcd\x21".b
+
+    d32[0x015f, 2] = "\x3c\x00".b
+    ivt_fix = [
+      0x06,                         # push es
+      0x33, 0xc0,                   # xor ax, ax
+      0x8e, 0xc0,                   # mov es, ax
+      0x66, 0x26, 0xa1, 0x04, 0x00, # mov eax, [es:0x0004] (BIOS ROM IRET)
+      0x66, 0x26, 0xa3, 0xa8, 0x00, # mov [es:0x00a8], eax (INT 2Ah)
+      0x66, 0x26, 0xa3, 0xbc, 0x00, # mov [es:0x00bc], eax (INT 2Fh)
+      0x07                          # pop es
+    ].pack("C*")
+    d32[0x0168, 0x01ac - 0x0168] = ivt_fix + ("\x90".b * ((0x01ac - 0x0168) - ivt_fix.bytesize))
+    d32[0x0214, 2] = "\x90\x90".b
+    d32[0x0ac6, 8] = "\x1e\x8e\xd8\x8b\x36\x6c\x30\x1f".b
+    d32[0x0ad1, 7] = "\x33\xc0\xa3\x2c\x00\xeb\x07".b
+    d32[0x3483, 2] = "\xeb\x4b".b
+    d32[0x371a, 3] = "\x1f\xf8\xc3".b
+    d32[0x3a19, 2] = "\xeb\x28".b
+    d32[0x3ae1, 2] = "\x90\x90".b
+
+    stub = [
+      0xc7, 0x06, 0x6c, 0x2c, 0x44, 0x4f, # mov word [0x2c6c], "DO"
+      0xc7, 0x06, 0x6e, 0x2c, 0x53, 0x33, # mov word [0x2c6e], "S3"
+      0xc7, 0x06, 0x70, 0x2c, 0x32, 0x41, # mov word [0x2c70], "2A"
+      0xc7, 0x06, 0x72, 0x2c, 0x2e, 0x45, # mov word [0x2c72], ".E"
+      0xc7, 0x06, 0x74, 0x2c, 0x58, 0x45, # mov word [0x2c74], "XE"
+      0xc6, 0x06, 0x76, 0x2c, 0x00,       # mov byte [0x2c76], 0
+      0x66, 0xba, 0x6c, 0x2c, 0x00, 0x00, # mov edx, 0x2c6c
+      0xb8, 0x00, 0x3d,                   # mov ax, 0x3d00
+      0xcd, 0x21                          # int 0x21
+    ].pack("C*")
+    pad_len = (0x37d3 - 0x3796) - stub.bytesize
+    d32[0x3796, 0x37d3 - 0x3796] = stub + ("\x90".b * pad_len)
+
+    d32[0x3827, 3] = "\xb8\x00\x3d".b
+    d32[0x3863, 3] = "\xb8\x00\x3d".b
+    d32
+  end
+
+  # High-speed binary file upload to MS-DOS using `SERGET.COM` via `Bento::VagrantMsdos::Communicator`.
+  def fast_upload_file!(comm, from, to)
+    raise "Host source file does not exist: #{from}" unless File.exist?(from)
+
+    comm.fast_upload_file!(from, to)
+  end
+
+  # Downloads and extracts the OpenWatcom v2 toolchain on the host if not already installed,
+  # and provisions `DOS32A.EXE` inside the MS-DOS guest.
+  def ensure_openwatcom!(machine, base_dir, serial_port, dos_version)
+    watcom_root = resolve_watcom_root(base_dir)
+    bin_sub     = host_bin_subdir(watcom_root)
+    wcl386_bin  = File.join(watcom_root, bin_sub, "wcl386")
+    wcl386_exe  = File.join(watcom_root, bin_sub, "wcl386.exe")
+
+    unless File.executable?(wcl386_bin) || File.file?(wcl386_exe)
+      ow_url = ENV["OPENWATCOM_URL"] || DEFAULT_OW_URL
+      archive_path = File.join(base_dir, ".vagrant", "ow-snapshot.tar.xz")
+      FileUtils.mkdir_p(File.dirname(archive_path))
+      FileUtils.mkdir_p(watcom_root)
+
+      machine.ui.info("==> [OpenWatcom] Downloading OpenWatcom v2 from #{ow_url}...")
+      unless system("curl", "-fL", "--retry", "3", "-o", archive_path, ow_url)
+        raise "Failed to download OpenWatcom v2 archive from #{ow_url}"
+      end
+
+      machine.ui.info("==> [OpenWatcom] Extracting OpenWatcom v2 to #{watcom_root}...")
+      unless system("tar", "-xJf", archive_path, "-C", watcom_root)
+        raise "Failed to extract #{archive_path} into #{watcom_root}"
+      end
+    end
+
+    bin_sub = host_bin_subdir(watcom_root)
+    machine.ui.info("==> [OpenWatcom] Host toolchain ready at #{watcom_root} (host binaries: #{bin_sub})")
+
+    # Configure environment and 32-bit DOS extender inside the running MS-DOS guest
+    if defined?(Bento::VagrantMsdos::Communicator)
+      if machine && machine.respond_to?(:communicate) && machine.communicate.respond_to?(:close_socket, true)
+        machine.communicate.send(:close_socket)
+      end
+      cfg = Bento::VagrantMsdos::Config.new
+      cfg.host = ENV["MSDOS_SERIAL_HOST"] || "127.0.0.1"
+      cfg.port = serial_port
+      cfg.dos_version = dos_version
+      cfg.finalize!
+      vm_s   = Struct.new(:communicator, :guest).new(:msdos, :msdos)
+      conf_s = Struct.new(:vm, :msdos).new(vm_s, cfg)
+      mach_s = Struct.new(:config, :data_dir).new(conf_s, nil)
+      comm   = Bento::VagrantMsdos::Communicator.new(mach_s)
+
+      begin
+        machine.ui.info("==> [OpenWatcom] Configuring DOS32A.EXE inside MS-DOS #{dos_version} guest (port #{serial_port})...")
+        if cfg.supports_subdirectories?
+          comm.execute("IF NOT EXIST C:#{BS}TEMP#{BS}NUL MKDIR C:#{BS}TEMP", error_check: false)
+        end
+
+        dos32a_src = [
+          File.join(watcom_root, "binw", "dos32a.exe"),
+          File.join(watcom_root, "binw", "DOS32A.EXE")
+        ].find { |p| File.file?(p) }
+
+        if dos32a_src
+          raw_d32 = File.binread(dos32a_src)
+          is_v4 = dos_version.to_s.start_with?("4")
+          d32_bytes = is_v4 ? raw_d32 : patch_dos32a_for_legacy_dos(raw_d32)
+          dest_d32 = is_v4 ? "C:#{BS}BENTO#{BS}DOS32A.EXE" : "C:#{BS}DOS32A.EXE"
+          Tempfile.create(["dos32a_staged", ".exe"]) do |tf|
+            tf.binmode
+            tf.write(d32_bytes)
+            tf.flush
+            machine.ui.detail("    Uploading DOS32A.EXE (27 KB 32-bit DOS extender) to #{dest_d32}...")
+            fast_upload_file!(comm, tf.path, dest_d32)
+          end
+        end
+
+        ver_out = +""
+        comm.execute("VER", error_check: false) do |_t, data|
+          ver_out << data
+        end
+        machine.ui.detail("    MS-DOS #{dos_version} guest verified: #{ver_out.strip}")
+      ensure
+        comm.send(:close_socket) if comm.respond_to?(:close_socket, true)
+      end
+    end
+
+    watcom_root
+  end
+
+  # Generates a fallback sample CMake + CTest C project in `project_dir` if no
+  # external `CMakeLists.txt` is present.
+  def generate_sample_cmake_project!(project_dir)
+    FileUtils.mkdir_p(File.join(project_dir, "include"))
+    FileUtils.mkdir_p(File.join(project_dir, "src"))
+    FileUtils.mkdir_p(File.join(project_dir, "tests"))
+
+    File.write(File.join(project_dir, "CMakeLists.txt"), <<~'CMAKE')
+      cmake_minimum_required(VERSION 3.15)
+      project(msdos_watcom_demo VERSION 1.0.0 LANGUAGES C)
+
+      enable_testing()
+
+      set(CMAKE_C_STANDARD 90)
+      set(CMAKE_C_STANDARD_REQUIRED ON)
+
+      add_library(dosmath STATIC src/dosmath.c)
+      target_include_directories(dosmath PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+      add_executable(t_add tests/test_add.c)
+      target_link_libraries(t_add PRIVATE dosmath)
+      add_test(NAME dosmath_addition COMMAND t_add)
+
+      add_executable(t_mul tests/test_mul.c)
+      target_link_libraries(t_mul PRIVATE dosmath)
+      add_test(NAME dosmath_multiplication COMMAND t_mul 6 7 42)
+    CMAKE
+
+    File.write(File.join(project_dir, "include", "dosmath.h"), <<~'HEADER')
+      #ifndef DOSMATH_H
+      #define DOSMATH_H
+
+      int dosmath_add(int a, int b);
+      int dosmath_mul(int a, int b);
+
+      #endif
+    HEADER
+
+    File.write(File.join(project_dir, "src", "dosmath.c"), <<~'SOURCE')
+      #include "dosmath.h"
+
+      int dosmath_add(int a, int b) {
+          return a + b;
+      }
+
+      int dosmath_mul(int a, int b) {
+          return a * b;
+      }
+    SOURCE
+
+    File.write(File.join(project_dir, "tests", "test_add.c"), <<~SOURCE)
+      #include <stdio.h>
+      #include "dosmath.h"
+
+      int main(void) {
+          int result = dosmath_add(20, 22);
+          printf("dosmath_add(20, 22) = %d#{NL}", result);
+          return (result == 42) ? 0 : 1;
+      }
+    SOURCE
+
+    File.write(File.join(project_dir, "tests", "test_mul.c"), <<~SOURCE)
+      #include <stdio.h>
+      #include <stdlib.h>
+      #include "dosmath.h"
+
+      int main(int argc, char **argv) {
+          int a = (argc > 1) ? atoi(argv[1]) : 6;
+          int b = (argc > 2) ? atoi(argv[2]) : 7;
+          int expected = (argc > 3) ? atoi(argv[3]) : 42;
+          int actual = dosmath_mul(a, b);
+          printf("dosmath_mul(%d, %d) = %d (expected %d)#{NL}", a, b, actual, expected);
+          return (actual == expected) ? 0 : 1;
+      }
+    SOURCE
+  end
+
+  # Writes the CMake OpenWatcom DOS toolchain file and the CTest cross-compiling
+  # emulator script that uploads compiled `.EXE` binaries into the target MS-DOS VM
+  # (1.25, 2.0, or 4.0) and executes them via `Bento::VagrantMsdos::Communicator`.
+  def write_cmake_toolchain_and_emulator!(build_dir, watcom_root, base_dir, serial_port, dos_version, machine_name)
+    FileUtils.mkdir_p(build_dir)
+    bin_sub       = host_bin_subdir(watcom_root)
+    dos_32bit     = ENV.fetch("MSDOS_32BIT", "1") != "0"
+    compiler_name = dos_32bit ? "wcl386" : "wcl"
+    compiler_path = File.join(watcom_root, bin_sub, compiler_name).tr(BS, "/")
+    watcom_norm   = watcom_root.tr(BS, "/")
+    arch_flags    = dos_32bit ? "-bt=dos -mf -3r -zq" : "-bt=dos -ms -0 -zq"
+
+    emulator_script = File.join(build_dir, "msdos_ctest_emulator.rb").tr(BS, "/")
+    toolchain_file  = File.join(build_dir, "msdos_openwatcom_toolchain.cmake")
+    bento_lib_dir   = File.expand_path("../../../bento/lib", base_dir).tr(BS, "/")
+    ruby_bin        = RbConfig.ruby.tr(BS, "/")
+    serial_host     = ENV["MSDOS_SERIAL_HOST"] || "127.0.0.1"
+    vagrantfile_p   = File.expand_path(__FILE__).tr(BS, "/")
+    cache_dir       = File.join(base_dir, ".vagrant", "msdos_exe_cache_#{machine_name}").tr(BS, "/")
+
+    File.write(emulator_script, <<~RUBY)
+      #!#{ruby_bin}
+      # frozen_string_literal: true
+
+      $LOAD_PATH.unshift(#{bento_lib_dir.inspect}) if File.directory?(#{bento_lib_dir.inspect})
+      require "bento/vagrant_msdos"
+      require "digest"
+      require "tempfile"
+      require "fileutils"
+
+      # Load MSDOSOpenWatcomCI helper for SERGET.COM high-speed upload & LE preservation
+      load #{vagrantfile_p.inspect} if !defined?(MSDOSOpenWatcomCI) && File.exist?(#{vagrantfile_p.inspect})
+
+      exe_path = ARGV.shift
+      abort("Usage: msdos_ctest_emulator.rb <dos-exe> [args...]") unless exe_path && File.exist?(exe_path)
+
+      bs = #{BS.inspect}
+      dos_ver = #{dos_version.inspect}
+      is_v4 = dos_ver.to_s.start_with?("4")
+      cfg = Bento::VagrantMsdos::Config.new
+      cfg.host = #{serial_host.inspect}
+      cfg.port = #{serial_port}
+      cfg.dos_version = dos_ver
+      cfg.finalize!
+
+      vm_s   = Struct.new(:communicator, :guest).new(:msdos, :msdos)
+      conf_s = Struct.new(:vm, :msdos).new(vm_s, cfg)
+      mach_s = Struct.new(:config, :data_dir).new(conf_s, nil)
+      comm   = Bento::VagrantMsdos::Communicator.new(mach_s)
+
+      begin
+        raw_stem = File.basename(exe_path, ".*").upcase.gsub(/[^A-Z0-9_]/, "")[0, 8]
+        raw_stem = "DOSTEST" if raw_stem.empty?
+        dos_name = "\#{raw_stem}.EXE"
+        dos_dir  = is_v4 ? "C:\#{bs}TEMP" : "C:"
+        dos_path = "\#{dos_dir}\#{bs}\#{dos_name}"
+        cmd_exe  = is_v4 ? dos_path : dos_name
+
+        if is_v4
+          comm.execute("IF NOT EXIST C:\#{bs}TEMP\#{bs}NUL MKDIR C:\#{bs}TEMP", error_check: false)
+        end
+
+        # Cache uploaded EXE by SHA-256 + guest existence check so multi-test CTest suites
+        # do not re-upload identical 850 KB binaries on every test invocation.
+        exe_sha = Digest::SHA256.file(exe_path).hexdigest
+        cache_dir = #{cache_dir.inspect}
+        FileUtils.mkdir_p(cache_dir)
+        stamp_file = File.join(cache_dir, "\#{dos_name}.sha256")
+        already_staged = false
+        if File.exist?(stamp_file) && File.read(stamp_file).strip == exe_sha
+          already_staged = is_v4 ? comm.test("IF EXIST \#{dos_path} ECHO OK") : true
+        end
+
+        unless already_staged
+          comm.fast_upload_file!(exe_path, dos_path)
+          File.write(stamp_file, exe_sha)
+        end
+
+        # Translate arguments for DOS COMMAND.COM safety:
+        # For jq filter expressions containing pipes, quotes, braces, or spaces,
+        # stage the filter into C:\TEMP\JQFLT.JQ (or C:\JQFLT.JQ on MS-DOS 1.25/2.0)
+        # and pass `-f <filter_file>` so COMMAND.COM does not split or pipe `|`.
+        dos_args = []
+        filter_staged = false
+        ARGV.each do |arg|
+          is_complex_filter = (%w[| " ' { } [ ]].any? { |c| arg.include?(c) } || arg.include?(" "))
+          if raw_stem == "JQ" && !filter_staged && !arg.start_with?("-") && is_complex_filter
+            flt_upload = "\#{dos_dir}\#{bs}JQFLT.JQ"
+            flt_arg    = is_v4 ? flt_upload : "JQFLT.JQ"
+            Tempfile.create(["jqflt", ".jq"]) do |tf|
+              tf.binmode
+              tf.write("\#{arg}\\r\\n")
+              tf.flush
+              comm.fast_upload_file!(tf.path, flt_upload)
+            end
+            dos_args << "-f" << flt_arg
+            filter_staged = true
+          else
+            dos_args << arg
+          end
+        end
+
+        arg_str = dos_args.join(" ")
+        dos32a_bin = is_v4 ? "C:\#{bs}BENTO\#{bs}DOS32A.EXE" : "DOS32A.EXE"
+        run_line =
+          if #{dos_32bit ? "true" : "false"}
+            arg_str.empty? ? "\#{dos32a_bin} \#{cmd_exe}" : "\#{dos32a_bin} \#{cmd_exe} \#{arg_str}"
+          else
+            arg_str.empty? ? cmd_exe : "\#{cmd_exe} \#{arg_str}"
+          end
+
+        captured = +""
+        exit_code = comm.execute(run_line, error_check: false) do |_type, data|
+          captured << data
+          $stdout.print(data)
+          $stdout.flush
+        end
+        if captured.include?("DOS/32A fatal") || captured.include?("DOS/32A run-time")
+          exit(1)
+        end
+        exit(exit_code.to_i)
+      ensure
+        comm.send(:close_socket) if comm.respond_to?(:close_socket, true)
+      end
+    RUBY
+    FileUtils.chmod(0o755, emulator_script)
+
+    File.write(toolchain_file, <<~CMAKE)
+      set(CMAKE_SYSTEM_NAME DOS)
+      set(CMAKE_SYSTEM_PROCESSOR #{dos_32bit ? "I386" : "I86"})
+      set(WATCOM_ROOT "#{watcom_norm}")
+      set(ENV{WATCOM} "#{watcom_norm}")
+      set(ENV{INCLUDE} "#{watcom_norm}/h")
+      set(ENV{EDPATH} "#{watcom_norm}/eddat")
+      set(ENV{WIPFC} "#{watcom_norm}/wipfc")
+      set(CMAKE_C_COMPILER "#{compiler_path}")
+      set(CMAKE_C_FLAGS_INIT "#{arch_flags}")
+      set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+      set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+      set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+      set(CMAKE_CROSSCOMPILING_EMULATOR "#{ruby_bin}" "#{emulator_script}")
+    CMAKE
+
+    toolchain_file
+  end
+
+  # Configures, builds, and runs the CMake + CTest suite (`busybox` by default)
+  # using OpenWatcom v2 and executes all CTest tests inside the target MS-DOS VM.
+  def run_cmake_and_ctest!(machine, base_dir, watcom_root, serial_port, dos_version, machine_name)
+    default_busybox_root = File.expand_path("../..", base_dir)
+    project_dir = ENV["CMAKE_PROJECT_DIR"]
+    if project_dir.nil? || project_dir.strip.empty?
+      if File.file?(File.join(default_busybox_root, "CMakeLists.txt"))
+        project_dir = default_busybox_root
+      else
+        project_dir = File.join(base_dir, ".vagrant", "msdos_cmake_example")
+        generate_sample_cmake_project!(project_dir)
+      end
+    end
+
+    build_dir = ENV["CMAKE_BUILD_DIR"] || File.join(base_dir, ".vagrant", "msdos_busybox_build")
+    bin_sub   = host_bin_subdir(watcom_root)
+    toolchain = write_cmake_toolchain_and_emulator!(
+      build_dir, watcom_root, base_dir, serial_port, dos_version, machine_name
+    )
+
+    clean_path = ENV["PATH"].to_s.split(File::PATH_SEPARATOR).reject { |p| p.include?("/opt/vagrant") }.join(File::PATH_SEPARATOR)
+    env = {
+      "CFLAGS"             => nil,
+      "CXXFLAGS"           => nil,
+      "LDFLAGS"            => nil,
+      "CPPFLAGS"           => nil,
+      "CPATH"              => nil,
+      "C_INCLUDE_PATH"     => nil,
+      "CPLUS_INCLUDE_PATH" => nil,
+      "LIBRARY_PATH"       => nil,
+      "PKG_CONFIG_PATH"    => nil,
+      "RUBYLIB"            => nil,
+      "GEM_HOME"           => nil,
+      "GEM_PATH"           => nil,
+      "BUNDLE_GEMFILE"     => nil,
+      "WATCOM"             => watcom_root,
+      "INCLUDE"            => File.join(watcom_root, "h"),
+      "EDPATH"             => File.join(watcom_root, "eddat"),
+      "WIPFC"              => File.join(watcom_root, "wipfc"),
+      "PATH"               => "#{File.join(watcom_root, bin_sub)}#{File::PATH_SEPARATOR}#{File.join(watcom_root, 'binw')}#{File::PATH_SEPARATOR}#{clean_path}"
+    }
+
+    cache_file = File.join(build_dir, "CMakeCache.txt")
+    if File.exist?(cache_file) && !File.exist?(File.join(build_dir, "Makefile"))
+      FileUtils.rm_rf(build_dir)
+      toolchain = write_cmake_toolchain_and_emulator!(
+        build_dir, watcom_root, base_dir, serial_port, dos_version, machine_name
+      )
+    end
+
+    machine.ui.info("==> [CMake] Configuring project (#{project_dir}) with OpenWatcom v2 (Watcom WMake) for MS-DOS #{dos_version} (#{machine_name})...")
+    cfg_ok = system(
+      env,
+      "cmake",
+      "-G", "Watcom WMake",
+      "-S", project_dir,
+      "-B", build_dir,
+      "-DCMAKE_TOOLCHAIN_FILE=#{toolchain}",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DBUILD_SHARED_LIBS=OFF",
+      "-DBUILD_TESTING=ON"
+    )
+    raise "CMake configuration failed for #{project_dir}" unless cfg_ok
+
+    machine.ui.info("==> [CMake] Building DOS executables with OpenWatcom wmake...")
+    bld_ok = system(env, "cmake", "--build", build_dir)
+    raise "CMake build failed in #{build_dir}" unless bld_ok
+
+    if machine && machine.respond_to?(:communicate) && machine.communicate.respond_to?(:close_socket, true)
+      machine.communicate.send(:close_socket)
+    end
+
+    machine.ui.info("==> [CTest] Running CTest suite inside MS-DOS #{dos_version} (#{machine_name}) over serial communicator (port #{serial_port})...")
+    tst_ok = system(env, "ctest", "--test-dir", build_dir, "--output-on-failure", "-V")
+    raise "CTest execution failed on MS-DOS #{dos_version} (#{machine_name})" unless tst_ok
+
+    machine.ui.success("==> [CMake/CTest] All OpenWatcom DOS tests built and passed inside MS-DOS #{dos_version} (#{machine_name})!")
+  end
+end
+
+# ---------------------------------------------------------------------------
+# Vagrant Multi-Machine Definition (`msdos-1.25`, `msdos-2.0`, `msdos-4.0`)
+# ---------------------------------------------------------------------------
+if defined?(Vagrant) && Vagrant.respond_to?(:configure)
+Vagrant.configure("2") do |config|
+  config.ssh.insert_key = false
+  vagrantfile_dir = __dir__
+  serial_host     = ENV["MSDOS_SERIAL_HOST"] || "127.0.0.1"
+
+  # Disable default /vagrant share unless explicitly mounted by the MS-DOS synced folder plugin
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  MSDOSOpenWatcomCI::MSDOS_MACHINES.each do |spec|
+    machine_name = spec[:name]
+    box_name     = spec[:box]
+    dos_version  = spec[:dos_version]
+    serial_port  = MSDOSOpenWatcomCI.resolve_serial_port(
+      serial_host, vagrantfile_dir, machine_name, spec[:default_port]
+    )
+
+    config.vm.define machine_name, primary: spec[:primary] do |dos|
+      dos.vm.box = box_name
+      dos.vm.guest = :msdos
+      dos.vm.communicator = :msdos
+      dos.vm.boot_timeout = 90
+      dos.vm.allow_fstab_modification = false
+      dos.vm.allow_hosts_modification = false
+      dos.vm.network :forwarded_port, guest: 22, host: serial_port + 40_000, id: "ssh", disabled: true
+
+      if defined?(Bento::VagrantMsdos::Config)
+        Bento::VagrantMsdos::Config.configure_machine(
+          dos,
+          host: serial_host,
+          port: serial_port,
+          dos_version: dos_version,
+          boot_timeout: 90,
+          command_timeout: 300
+        )
+      elsif dos.respond_to?(:msdos)
+        dos.msdos.host            = serial_host
+        dos.msdos.port            = serial_port
+        dos.msdos.dos_version     = dos_version
+        dos.msdos.boot_timeout    = 90
+        dos.msdos.command_timeout = 300
+      end
+
+      # -----------------------------------------------------------------------
+      # QEMU Provider (macOS Apple Silicon arm64 & Intel x86_64, Linux)
+      # -----------------------------------------------------------------------
+      dos.vm.provider :qemu do |qe|
+        host_cpu = RbConfig::CONFIG["host_cpu"].to_s.downcase
+        is_arm = host_cpu.include?("arm") || host_cpu.include?("aarch64")
+        accel = is_arm ? "tcg" : (RUBY_PLATFORM.include?("darwin") ? "hvf:tcg" : "kvm:tcg")
+
+        qe.arch = "i386"
+        qe.machine = "pc,accel=#{accel}"
+        qe.cpu = is_arm ? "max" : "pentium2"
+        qe.smp = "1"
+        qe.memory = "64M"
+        qe.net_device = nil
+        qe.drive_interface = "ide"
+        qe.firmware_format = nil
+        qe.debug_port = serial_port
+        qe.ssh_port = (ENV["MSDOS_QEMU_SSH_PORT"] || (50_000 + (serial_port % 10_000))).to_i
+        qe.ssh_auto_correct = true
+        qe.extra_qemu_args = %W[-vga std -rtc base=localtime]
+        qe.qemu_dir = "/opt/homebrew/share/qemu" if File.directory?("/opt/homebrew/share/qemu")
+      end
+
+      # -----------------------------------------------------------------------
+      # Libvirt Provider (Linux KVM / QEMU)
+      # -----------------------------------------------------------------------
+      dos.vm.provider "libvirt" do |lv|
+        lv.memory = 64
+        lv.cpus = 1
+        lv.disk_bus = "ide"
+        lv.graphics_type = "vnc"
+      end
+
+      # -----------------------------------------------------------------------
+      # VirtualBox Provider (x86_64 hosts)
+      # -----------------------------------------------------------------------
+      dos.vm.provider "virtualbox" do |vb|
+        vb.memory = 64
+        vb.cpus = 1
+        vb.check_guest_additions = false
+        vb.customize ["modifyvm", :id, "--uart1", "0x3F8", "4"]
+        vb.customize ["modifyvm", :id, "--uartmode1", "tcpserver", serial_port.to_s]
+      end
+
+      # -----------------------------------------------------------------------
+      # UTM Provider (macOS Apple Silicon)
+      # -----------------------------------------------------------------------
+      dos.vm.provider "utm" do |u|
+        u.memory = 64
+        u.cpus = 1
+      end
+
+      # -----------------------------------------------------------------------
+      # Automated OpenWatcom v2 Setup + BusyBox CMake/CTest Build & Execution
+      # -----------------------------------------------------------------------
+      dos.trigger.after %i[up provision] do |trigger|
+        trigger.name = "OpenWatcom v2 Setup & MS-DOS #{dos_version} (#{machine_name}) CMake/CTest Verification"
+        trigger.ruby do |_env, machine|
+          if ENV["SKIP_OPENWATCOM"] == "1"
+            machine.ui.info("==> Skipping OpenWatcom v2 setup (SKIP_OPENWATCOM=1).")
+          else
+            watcom_root = MSDOSOpenWatcomCI.ensure_openwatcom!(
+              machine, vagrantfile_dir, serial_port, dos_version
+            )
+            if ENV["SKIP_CMAKE_EXAMPLE"] == "1"
+              machine.ui.info("==> Skipping CMake/CTest verification (SKIP_CMAKE_EXAMPLE=1).")
+            else
+              MSDOSOpenWatcomCI.run_cmake_and_ctest!(
+                machine, vagrantfile_dir, watcom_root, serial_port, dos_version, machine_name
+              )
+            end
+          end
+        end
+      end
+    end
+  end
+end
+end

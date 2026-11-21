@@ -1,6 +1,8 @@
 # Fetched Repositories
 auto-win-msvc/
 busybox/
+.vagrant/
+.watcom/
 
 # Build and Output Directories
 build*/

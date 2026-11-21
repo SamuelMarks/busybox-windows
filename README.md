@@ -42,10 +42,11 @@ By separating POSIX/Linux platform polyfills from the BusyBox build harness:
 Pre-compiled packages are available on the [Releases](../../releases) tab.
 
 ### Included Packages:
-- **Standalone Executable (`busybox-*-X64.exe`):** Raw single-file native Windows binary ready to run directly without installation.
+- **Standalone Windows Executable (`busybox-*-X64.exe`):** Raw single-file native Windows binary ready to run directly without installation.
 - **NSIS Setup Installer (`busybox-*-X64-setup.exe`):** Windows installer with option to add BusyBox to the system PATH.
 - **WiX MSI Installer (`busybox-*-X64.msi`):** Windows Installer package for enterprise and automated deployments.
-- **Portable ZIP Archive (`busybox-*-X64.zip`):** Standalone archive containing `busybox.exe` and documentation.
+- **Portable Windows ZIP Archive (`busybox-*-X64.zip`):** Standalone archive containing `busybox.exe` and documentation.
+- **32-bit Protected-Mode DOS Executable & Archives (`busybox-*-dos32.exe`, `busybox-*-dos32.zip`, `busybox-*-msdos-1.25.zip`, `busybox-*-msdos-2.0.zip`, `busybox-*-msdos-4.0.zip`):** OpenWatcom v2 32-bit DOS builds bundled with `DOS32A.EXE` (including legacy-patched `DOS32A.EXE` for MS-DOS 1.25 and 2.0).
 
 ---
 
@@ -84,6 +85,41 @@ To build BusyBox for Windows from source using Visual Studio / MSVC:
    cpack -C Release -G ZIP
    cpack -C Release -G NSIS
    ```
+
+---
+
+## Building for 32-bit Protected-Mode DOS (OpenWatcom v2)
+
+In addition to native Windows builds, this repository supports compiling BusyBox for **32-bit Protected-Mode DOS** (`DOS/32A` / `DOS/4GW`) using **OpenWatcom v2** (`wcl386`):
+
+```cmd
+release_dos.bat
+```
+
+Or directly via CMake with OpenWatcom `wmake`:
+
+```bash
+cmake -G "Watcom WMake" -B build_dos -S . \
+  -DCMAKE_SYSTEM_NAME=DOS \
+  -DCMAKE_SYSTEM_PROCESSOR=I386 \
+  -DCMAKE_C_COMPILER="$WATCOM/binl64/wcl386" \
+  -DCMAKE_C_FLAGS_INIT="-bt=dos -mf -3r -zq" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DBUILD_TESTING=OFF
+cmake --build build_dos --config Release
+```
+
+### MS-DOS 1.25, 2.0, and 4.0 Vagrant Verification (`vagrant/dos/Vagrantfile`)
+
+A multi-machine Vagrant environment (`msdos-1.25`, `msdos-2.0`, `msdos-4.0`) in [`vagrant/dos/Vagrantfile`](vagrant/dos/Vagrantfile) automatically provisions OpenWatcom v2 on the host, cross-compiles `busybox.exe` for 32-bit DOS, patches `DOS32A.EXE` for legacy MS-DOS 1.25 and 2.0 compatibility, uploads `BUSYB32.EXE` over the `COM1` serial/telnet bridge (`SERGET.COM`), and executes the CTest functional verification suite inside live MS-DOS virtual machines:
+
+```bash
+cd vagrant/dos
+vagrant up msdos-4.0 --provider=qemu
+vagrant up msdos-2.0 --provider=qemu
+vagrant up msdos-1.25 --provider=qemu
+```
 
 ---
 

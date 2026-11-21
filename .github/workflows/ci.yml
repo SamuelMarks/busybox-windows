@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: SamuelMarks/auto-win-msvc
-          ref: 6ff8525b2e0541fab3b792b78ce80cf055322787
+          ref: master
           path: auto-win-msvc
 
       - name: Checkout busybox
@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: SamuelMarks/auto-win-msvc
-          ref: 6ff8525b2e0541fab3b792b78ce80cf055322787
+          ref: master
           path: auto-win-msvc
 
       - name: Checkout busybox
@@ -184,15 +184,203 @@ jobs:
             build/busybox-*-${{ runner.arch }}.msi
             build/busybox-*-${{ runner.arch }}.zip
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Create GitHub Release (Windows Packages)
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/1.')
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          name: BusyBox for Windows ${{ github.ref_name }}
+          name: BusyBox for Windows & DOS ${{ github.ref_name }}
           files: |
             build/busybox-*-${{ runner.arch }}.exe
             build/busybox-*-${{ runner.arch }}-setup.exe
             build/busybox-*-${{ runner.arch }}.msi
             build/busybox-*-${{ runner.arch }}.zip
+          generate_release_notes: true
+
+  c-ci:
+    uses: SamuelMarks/c-ci/.github/workflows/c-cmake-ci.yml@master
+    with:
+      build_type: 'Release'
+      cmake_configure_flags: '-DBUILD_TESTING=ON'
+      extra_cygwin_packages: 'git'
+      msdos_testing: true
+      msdos_archs: 'I386'
+
+  build-dos:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout busybox-windows
+        uses: actions/checkout@v7
+
+      - name: Checkout auto-win-msvc
+        uses: actions/checkout@v7
+        with:
+          repository: SamuelMarks/auto-win-msvc
+          ref: master
+          path: auto-win-msvc
+
+      - name: Checkout c-ci
+        uses: actions/checkout@v7
+        with:
+          repository: SamuelMarks/c-ci
+          ref: master
+          path: c-ci
+
+      - name: Checkout bento
+        uses: actions/checkout@v7
+        with:
+          repository: SamuelMarks/bento
+          ref: multi-os-qemu-aarch64
+          path: bento
+
+      - name: Checkout busybox
+        run: |
+          ref="${{ github.event.inputs.version || 'e6302b2711d851bfb17eaf9316514c9d0a806cc7' }}"
+          git clone --depth 200 https://git.busybox.net/busybox busybox
+          git -C busybox checkout -B master "$ref"
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Host Dependencies (QEMU, mtools, NASM, Ruby, CMake)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 \
+            qemu-utils \
+            mtools \
+            dosfstools \
+            nasm \
+            unzip \
+            xz-utils \
+            ruby \
+            cmake \
+            curl \
+            ca-certificates
+
+      - name: Install OpenWatcom v2 Toolchain
+        run: |
+          sudo mkdir -p /opt/watcom
+          sudo chown -R "$USER:$USER" /opt/watcom
+          curl -fL --retry 3 -o /tmp/ow-snapshot.tar.xz https://github.com/open-watcom/open-watcom-v2/releases/download/Current-build/ow-snapshot.tar.xz
+          tar -xJf /tmp/ow-snapshot.tar.xz -C /opt/watcom
+          rm -f /tmp/ow-snapshot.tar.xz
+
+      - name: Build and Test on MS-DOS (4.00, 2.00, 1.25) via c-ci
+        env:
+          DOS_WATCOM_ROOT: /opt/watcom
+          DOS_BUILD_TYPE: Release
+        run: |
+          sh "$PWD/c-ci/run_dos_watcom_matrix.sh" \
+            --mode standalone \
+            --os msdos \
+            --arch I386 \
+            --bento-dir "$PWD/bento" \
+            --project .
+
+      - name: Configure and Build 32-bit DOS BusyBox with OpenWatcom v2
+        run: |
+          export WATCOM="/opt/watcom"
+          if [ -d "$WATCOM/binl64" ]; then
+            WATCOM_BIN="$WATCOM/binl64"
+          else
+            WATCOM_BIN="$WATCOM/binl"
+          fi
+          export PATH="$WATCOM_BIN:$WATCOM/binw:$PATH"
+          export INCLUDE="$WATCOM/h"
+          export EDPATH="$WATCOM/eddat"
+          export WIPFC="$WATCOM/wipfc"
+
+          cmake -G "Watcom WMake" -B build_dos -S . \
+            -DCMAKE_SYSTEM_NAME=DOS \
+            -DCMAKE_SYSTEM_PROCESSOR=I386 \
+            -DCMAKE_C_COMPILER="$WATCOM_BIN/wcl386" \
+            -DCMAKE_C_FLAGS_INIT="-bt=dos -mf -3r -zq" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TESTING=OFF \
+            -DFETCHCONTENT_SOURCE_DIR_AUTO_WIN_MSVC="$PWD/auto-win-msvc" \
+            -DBUSYBOX_SOURCE_DIR="$PWD/busybox"
+
+          cmake --build build_dos --config Release
+
+      - name: Package DOS Builds (dos32, MS-DOS 1.25, MS-DOS 2.0, MS-DOS 4.0)
+        run: |
+          export WATCOM="/opt/watcom"
+          if [ -d "$WATCOM/binl64" ]; then
+            WATCOM_BIN="$WATCOM/binl64"
+          else
+            WATCOM_BIN="$WATCOM/binl"
+          fi
+          export PATH="$WATCOM_BIN:$WATCOM/binw:$PATH"
+          export INCLUDE="$WATCOM/h"
+          export EDPATH="$WATCOM/eddat"
+          export WIPFC="$WATCOM/wipfc"
+
+          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="1.39.0"
+          fi
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            PKG_VERSION="$VERSION"
+          else
+            PKG_VERSION="1.39.0"
+          fi
+
+          pushd build_dos
+          cpack -C Release -G ZIP -D "CPACK_PACKAGE_VERSION=$PKG_VERSION" -D "CPACK_PACKAGE_FILE_NAME=busybox-${VERSION}-dos32"
+          cp -f busybox.exe "busybox-${VERSION}-dos32.exe"
+          popd
+
+          # Generate patched DOS32A.EXE for legacy MS-DOS 1.25 and 2.0 using vagrant/dos/Vagrantfile
+          ruby -e '
+            load "vagrant/dos/Vagrantfile"
+            raw = File.binread("/opt/watcom/binw/dos32a.exe")
+            File.binwrite("build_dos/dos32a_legacy.exe", MSDOSOpenWatcomCI.patch_dos32a_for_legacy_dos(raw))
+          '
+
+          for dos_target in msdos-1.25 msdos-2.0 msdos-4.0; do
+            stage_dir="build_dos/pkg_${dos_target}/busybox-${VERSION}-${dos_target}"
+            mkdir -p "$stage_dir"
+            cp -f build_dos/busybox.exe "$stage_dir/BUSYBOX.EXE"
+            if [ "$dos_target" = "msdos-4.0" ]; then
+              cp -f /opt/watcom/binw/dos32a.exe "$stage_dir/DOS32A.EXE"
+            else
+              cp -f build_dos/dos32a_legacy.exe "$stage_dir/DOS32A.EXE"
+            fi
+            cp -f README.md LICENSE-APACHE LICENSE-MIT LICENSE-CC0 "$stage_dir/"
+            (cd "build_dos/pkg_${dos_target}" && zip -r "../busybox-${VERSION}-${dos_target}.zip" "busybox-${VERSION}-${dos_target}")
+            rm -rf "build_dos/pkg_${dos_target}"
+          done
+          rm -f build_dos/dos32a_legacy.exe
+          ls -lh build_dos/busybox-*-dos32.exe build_dos/busybox-*-dos32.zip build_dos/busybox-*-msdos-*.zip
+
+      - name: Upload DOS Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: busybox-dos-packages
+          path: |
+            build_dos/busybox-*-dos32.exe
+            build_dos/busybox-*-dos32.zip
+            build_dos/busybox-*-msdos-1.25.zip
+            build_dos/busybox-*-msdos-2.0.zip
+            build_dos/busybox-*-msdos-4.0.zip
+
+      - name: Publish DOS Packages to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/1.')
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: BusyBox for Windows & DOS ${{ github.ref_name }}
+          files: |
+            build_dos/busybox-*-dos32.exe
+            build_dos/busybox-*-dos32.zip
+            build_dos/busybox-*-msdos-1.25.zip
+            build_dos/busybox-*-msdos-2.0.zip
+            build_dos/busybox-*-msdos-4.0.zip
           generate_release_notes: true

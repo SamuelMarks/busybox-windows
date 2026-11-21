@@ -103,7 +103,16 @@ def render_autoconf_header(
         "#ifndef AUTOCONF_H",
         "#define AUTOCONF_H 1",
         "",
-        "#if defined(_WIN32) || defined(_MSC_VER)",
+        "#ifndef BB_VER",
+        '#define BB_VER "1.39.0"',
+        "#endif",
+        "#ifndef AUTOCONF_TIMESTAMP",
+        '#define AUTOCONF_TIMESTAMP ""',
+        "#endif",
+        (
+            "#if defined(_WIN32) || defined(_MSC_VER)"
+            " || defined(__DOS__) || defined(__MSDOS__) || defined(__WATCOMC__)"
+        ),
         '#define CONFIG_BUSYBOX_EXEC_PATH "busybox.exe"',
         "#else",
         '#define CONFIG_BUSYBOX_EXEC_PATH "/proc/self/exe"',
@@ -122,8 +131,11 @@ def render_autoconf_header(
         "#endif",
         "#endif",
         "",
-        "/* Platform MMU / NOMMU selection: Windows uses spawn/NOMMU, POSIX uses MMU */",
-        "#if defined(_WIN32) || defined(_MSC_VER)",
+        "/* Platform MMU / NOMMU selection: Windows and DOS use spawn/NOMMU, POSIX uses MMU */",
+        (
+            "#if defined(_WIN32) || defined(_MSC_VER)"
+            " || defined(__DOS__) || defined(__MSDOS__) || defined(__WATCOMC__)"
+        ),
         "#define CONFIG_NOMMU 1",
         "#define ENABLE_NOMMU 1",
         "#define IF_NOMMU(...) __VA_ARGS__",

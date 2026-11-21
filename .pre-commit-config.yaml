@@ -91,3 +91,10 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      - id: build-msdos
+        name: Build & Test (OpenWatcom v2 MS-DOS)
+        entry: python3 -c "import os, urllib.request; p = '../c-ci/precommit_matrix.py'; code = open(p, 'rb').read() if os.path.exists(p) else urllib.request.urlopen('https://raw.githubusercontent.com/SamuelMarks/c-ci/master/precommit_matrix.py').read(); os.environ.setdefault('DOS_MATRIX_ARCH', 'I386'); os.environ.setdefault('DOS_BUILD_TYPE', 'Release'); exec(code)" build msdos
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -20,6 +20,10 @@ project(busybox-windows VERSION 1.39.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+if((WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS") AND NOT CMAKE_BUILD_TYPE MATCHES "^(Release|MinSizeRel)$")
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type for DOS" FORCE)
+endif()
+
 set(BUSYBOX_VERSION "1.39.0")
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
@@ -94,7 +98,7 @@ if(NOT TARGET auto-win-msvc)
     FetchContent_Declare(
         auto_win_msvc
         GIT_REPOSITORY https://github.com/SamuelMarks/auto-win-msvc.git
-        GIT_TAG        6ff8525b2e0541fab3b792b78ce80cf055322787
+        GIT_TAG        master
     )
     FetchContent_MakeAvailable(auto_win_msvc)
 endif()
@@ -454,7 +458,7 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../auto-win-msvc/cmake/AutoWinMsvcTra
     include("${CMAKE_CURRENT_SOURCE_DIR}/../auto-win-msvc/cmake/AutoWinMsvcTransform.cmake")
 endif()
 
-if(COMMAND auto_win_msvc_transform_sources AND MSVC)
+if(COMMAND auto_win_msvc_transform_sources AND (MSVC OR WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS"))
     auto_win_msvc_transform_sources(
         OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/src_gen"
         OUTPUT_VAR BUSYBOX_CORE_SOURCES
@@ -493,6 +497,19 @@ if(MSVC)
         "/FIauto-win-msvc-configure.h"
         "/FIautoconf.h"
     )
+elseif(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    target_compile_options(busybox PRIVATE
+        "-bt=dos"
+        "-mf"
+        "-3r"
+        "-zq"
+        "-zm"
+        "-ze"
+        "-za99"
+        "-fi=${CMAKE_CURRENT_BINARY_DIR}/posix_includes/auto-win-msvc-configure.h"
+        "-fi=${BUSYBOX_GEN_INC}/autoconf.h"
+    )
+    target_link_options(busybox PRIVATE "OPT" "STACK=524288")
 else()
     target_compile_options(busybox PRIVATE
         "SHELL:-include auto-win-msvc-configure.h"
@@ -500,11 +517,25 @@ else()
     )
 endif()
 
-target_compile_definitions(busybox PRIVATE
-    _GNU_SOURCE=1
-    BB_VER="${BUSYBOX_VERSION}"
-    AUTOCONF_TIMESTAMP=""
-)
+if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    target_compile_definitions(busybox PRIVATE
+        _GNU_SOURCE=1
+        _OW_STRNLEN_MACRO_DEFINED=1
+        _OPENWATCOM_STRNLEN_DEFINED=1
+    )
+    if(TARGET auto-win-msvc)
+        target_compile_definitions(auto-win-msvc PRIVATE
+            _OW_STRNLEN_MACRO_DEFINED=1
+            _OPENWATCOM_STRNLEN_DEFINED=1
+        )
+    endif()
+else()
+    target_compile_definitions(busybox PRIVATE
+        _GNU_SOURCE=1
+        BB_VER="${BUSYBOX_VERSION}"
+        AUTOCONF_TIMESTAMP=""
+    )
+endif()
 
 if(TARGET auto-win-msvc)
     target_link_libraries(busybox PRIVATE auto-win-msvc)
@@ -521,6 +552,24 @@ if(UNIX AND NOT LINUX)
     find_library(RESOLV_LIBRARY resolv)
     if(RESOLV_LIBRARY)
         target_link_libraries(busybox PRIVATE "${RESOLV_LIBRARY}")
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
+# OpenWatcom DOS Extender Staging (dos32a.exe / dos4gw.exe)
+# -----------------------------------------------------------------------------
+if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    set(_watcom_env "$ENV{WATCOM}")
+    if(NOT _watcom_env AND DEFINED WATCOM_ROOT)
+        set(_watcom_env "${WATCOM_ROOT}")
+    endif()
+    if(_watcom_env)
+        foreach(_extender dos4gw.exe dos32a.exe)
+            if(EXISTS "${_watcom_env}/binw/${_extender}")
+                file(COPY "${_watcom_env}/binw/${_extender}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
+                install(FILES "${_watcom_env}/binw/${_extender}" DESTINATION bin)
+            endif()
+        endforeach()
     endif()
 endif()
 
@@ -562,84 +611,101 @@ include(CTest)
 if(BUILD_TESTING)
     enable_testing()
 
-    # Core CLI & Shell verification tests with strict output assertions
-    add_test(NAME test_busybox_help COMMAND busybox --help)
-    set_tests_properties(test_busybox_help PROPERTIES PASS_REGULAR_EXPRESSION "BusyBox")
+    if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+        # DOS Protected-Mode CTest smoke suite (compatible with MS-DOS 1.25/2.0/4.0 COMMAND.COM)
+        add_test(NAME test_busybox_echo COMMAND busybox echo "BusyBox DOS build successful")
+        set_tests_properties(test_busybox_echo PROPERTIES PASS_REGULAR_EXPRESSION "BusyBox DOS build successful")
 
-    add_test(NAME test_busybox_ash COMMAND busybox ash -c "echo ash_works")
-    set_tests_properties(test_busybox_ash PROPERTIES PASS_REGULAR_EXPRESSION "ash_works")
+        add_test(NAME test_busybox_true COMMAND busybox true)
 
-    add_test(NAME test_busybox_hush COMMAND busybox hush -c "echo hush_works")
-    set_tests_properties(test_busybox_hush PROPERTIES PASS_REGULAR_EXPRESSION "hush_works")
+        add_test(NAME test_busybox_basename COMMAND busybox basename "foo/bar/baz.txt" ".txt")
+        set_tests_properties(test_busybox_basename PROPERTIES PASS_REGULAR_EXPRESSION "baz")
 
-    add_test(NAME test_busybox_sh COMMAND busybox sh -c "echo sh_works")
-    set_tests_properties(test_busybox_sh PROPERTIES PASS_REGULAR_EXPRESSION "sh_works")
+        add_test(NAME test_busybox_dirname COMMAND busybox dirname "foo/bar/baz.txt")
+        set_tests_properties(test_busybox_dirname PROPERTIES PASS_REGULAR_EXPRESSION "foo/bar")
 
-    add_test(NAME test_busybox_echo COMMAND busybox echo "BusyBox native build successful")
-    set_tests_properties(test_busybox_echo PROPERTIES PASS_REGULAR_EXPRESSION "BusyBox native build successful")
+        add_test(NAME test_busybox_factor COMMAND busybox factor 42)
+        set_tests_properties(test_busybox_factor PROPERTIES PASS_REGULAR_EXPRESSION "42: 2 3 7")
+    else()
+        # Core CLI & Shell verification tests with strict output assertions
+        add_test(NAME test_busybox_help COMMAND busybox --help)
+        set_tests_properties(test_busybox_help PROPERTIES PASS_REGULAR_EXPRESSION "BusyBox")
 
-    add_test(NAME test_busybox_true COMMAND busybox true)
+        add_test(NAME test_busybox_ash COMMAND busybox ash -c "echo ash_works")
+        set_tests_properties(test_busybox_ash PROPERTIES PASS_REGULAR_EXPRESSION "ash_works")
 
-    add_test(NAME test_busybox_false COMMAND busybox false)
-    set_tests_properties(test_busybox_false PROPERTIES WILL_FAIL TRUE)
+        add_test(NAME test_busybox_hush COMMAND busybox hush -c "echo hush_works")
+        set_tests_properties(test_busybox_hush PROPERTIES PASS_REGULAR_EXPRESSION "hush_works")
 
-    add_test(NAME test_busybox_basename COMMAND busybox basename "foo/bar/baz.txt" ".txt")
-    set_tests_properties(test_busybox_basename PROPERTIES PASS_REGULAR_EXPRESSION "^baz")
+        add_test(NAME test_busybox_sh COMMAND busybox sh -c "echo sh_works")
+        set_tests_properties(test_busybox_sh PROPERTIES PASS_REGULAR_EXPRESSION "sh_works")
 
-    add_test(NAME test_busybox_dirname COMMAND busybox dirname "foo/bar/baz.txt")
-    set_tests_properties(test_busybox_dirname PROPERTIES PASS_REGULAR_EXPRESSION "^foo/bar")
+        add_test(NAME test_busybox_echo COMMAND busybox echo "BusyBox native build successful")
+        set_tests_properties(test_busybox_echo PROPERTIES PASS_REGULAR_EXPRESSION "BusyBox native build successful")
 
-    add_test(NAME test_busybox_printf COMMAND busybox printf "%s %d
+        add_test(NAME test_busybox_true COMMAND busybox true)
+
+        add_test(NAME test_busybox_false COMMAND busybox false)
+        set_tests_properties(test_busybox_false PROPERTIES WILL_FAIL TRUE)
+
+        add_test(NAME test_busybox_basename COMMAND busybox basename "foo/bar/baz.txt" ".txt")
+        set_tests_properties(test_busybox_basename PROPERTIES PASS_REGULAR_EXPRESSION "^baz")
+
+        add_test(NAME test_busybox_dirname COMMAND busybox dirname "foo/bar/baz.txt")
+        set_tests_properties(test_busybox_dirname PROPERTIES PASS_REGULAR_EXPRESSION "^foo/bar")
+
+        add_test(NAME test_busybox_printf COMMAND busybox printf "%s %d
 " "value:" 42)
-    set_tests_properties(test_busybox_printf PROPERTIES PASS_REGULAR_EXPRESSION "value: 42")
+        set_tests_properties(test_busybox_printf PROPERTIES PASS_REGULAR_EXPRESSION "value: 42")
 
-    add_test(NAME test_busybox_factor COMMAND busybox factor 42)
-    set_tests_properties(test_busybox_factor PROPERTIES PASS_REGULAR_EXPRESSION "42: 2 3 7")
+        add_test(NAME test_busybox_factor COMMAND busybox factor 42)
+        set_tests_properties(test_busybox_factor PROPERTIES PASS_REGULAR_EXPRESSION "42: 2 3 7")
 
-    add_test(NAME test_busybox_awk COMMAND busybox awk "BEGIN { print 6 * 7; exit }")
-    set_tests_properties(test_busybox_awk PROPERTIES PASS_REGULAR_EXPRESSION "^42")
+        add_test(NAME test_busybox_awk COMMAND busybox awk "BEGIN { print 6 * 7; exit }")
+        set_tests_properties(test_busybox_awk PROPERTIES PASS_REGULAR_EXPRESSION "^42")
 
-    add_test(NAME test_busybox_bc COMMAND busybox bc "${CMAKE_CURRENT_SOURCE_DIR}/tests/bc_test.txt")
-    set_tests_properties(test_busybox_bc PROPERTIES PASS_REGULAR_EXPRESSION "42")
+        add_test(NAME test_busybox_bc COMMAND busybox bc "${CMAKE_CURRENT_SOURCE_DIR}/tests/bc_test.txt")
+        set_tests_properties(test_busybox_bc PROPERTIES PASS_REGULAR_EXPRESSION "42")
 
-    add_test(NAME test_busybox_dc COMMAND busybox dc -e "6 7 * p")
-    set_tests_properties(test_busybox_dc PROPERTIES PASS_REGULAR_EXPRESSION "^42")
+        add_test(NAME test_busybox_dc COMMAND busybox dc -e "6 7 * p")
+        set_tests_properties(test_busybox_dc PROPERTIES PASS_REGULAR_EXPRESSION "^42")
 
-    add_test(NAME test_busybox_pidof COMMAND busybox pidof busybox)
-    set_tests_properties(test_busybox_pidof PROPERTIES PASS_REGULAR_EXPRESSION "[0-9]+")
+        add_test(NAME test_busybox_pidof COMMAND busybox pidof busybox)
+        set_tests_properties(test_busybox_pidof PROPERTIES PASS_REGULAR_EXPRESSION "[0-9]+")
 
-    add_test(NAME test_busybox_df COMMAND busybox df .)
-    set_tests_properties(test_busybox_df PROPERTIES PASS_REGULAR_EXPRESSION "Filesystem")
+        add_test(NAME test_busybox_df COMMAND busybox df .)
+        set_tests_properties(test_busybox_df PROPERTIES PASS_REGULAR_EXPRESSION "Filesystem")
 
-    add_test(NAME test_busybox_free COMMAND busybox free)
-    set_tests_properties(test_busybox_free PROPERTIES PASS_REGULAR_EXPRESSION "Mem:")
+        add_test(NAME test_busybox_free COMMAND busybox free)
+        set_tests_properties(test_busybox_free PROPERTIES PASS_REGULAR_EXPRESSION "Mem:")
 
-    if(NOT MSVC)
-        # Isolated, self-contained functional applet suites (zero --help tests, zero source-tree mutations)
-        add_test(
-            NAME test_suite_coreutils
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                    "$<TARGET_FILE:busybox>" --suite coreutils
-        )
-        add_test(
-            NAME test_suite_editors_and_find
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                    "$<TARGET_FILE:busybox>" --suite editors
-        )
-        add_test(
-            NAME test_suite_archival
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                    "$<TARGET_FILE:busybox>" --suite archival
-        )
-        add_test(
-            NAME test_suite_procps_and_shell
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                    "$<TARGET_FILE:busybox>" --suite procps
-        )
-        add_test(
-            NAME test_suite_networking
-            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
-                    "$<TARGET_FILE:busybox>" --suite networking
-        )
+        if(NOT MSVC)
+            # Isolated, self-contained functional applet suites (zero --help tests, zero source-tree mutations)
+            add_test(
+                NAME test_suite_coreutils
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                        "$<TARGET_FILE:busybox>" --suite coreutils
+            )
+            add_test(
+                NAME test_suite_editors_and_find
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                        "$<TARGET_FILE:busybox>" --suite editors
+            )
+            add_test(
+                NAME test_suite_archival
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                        "$<TARGET_FILE:busybox>" --suite archival
+            )
+            add_test(
+                NAME test_suite_procps_and_shell
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                        "$<TARGET_FILE:busybox>" --suite procps
+            )
+            add_test(
+                NAME test_suite_networking
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
+                        "$<TARGET_FILE:busybox>" --suite networking
+            )
+        endif()
     endif()
 endif()
