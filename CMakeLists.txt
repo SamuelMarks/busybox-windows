@@ -7,26 +7,32 @@
 # and comprehensive CTest functional test suites for all enabled applets.
 #
 # Parameters / Cache Variables:
-#   BUSYBOX_SOURCE_DIR - Path to upstream BusyBox source tree (auto-detected or
-#                        fetched via FetchContent if absent).
+#   BUSYBOX_SOURCE_DIR                    - Path to upstream BusyBox source tree
+#                                           (auto-detected or fetched if absent).
 #   FETCHCONTENT_SOURCE_DIR_AUTO_WIN_MSVC - Path to local auto-win-msvc tree.
-#   BUILD_TESTING      - Enables CTest functional applet verification (default ON).
+#   BUILD_TESTING                         - Enables CTest functional tests (top-level).
+#   BUSYBOX_WINDOWS_BUILD_TESTING         - Enables BusyBox CTest suite.
+#   BUSYBOX_WINDOWS_INSTALL               - Enables install and CPack rules.
 # =============================================================================
 
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.24...3.31)
 
 project(busybox-windows VERSION 1.39.0 LANGUAGES C)
 
-set(CMAKE_C_STANDARD 99)
-set(CMAKE_C_STANDARD_REQUIRED ON)
+if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    set(_busybox_is_dos ON)
+else()
+    set(_busybox_is_dos OFF)
+endif()
 
-if((WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS") AND NOT CMAKE_BUILD_TYPE MATCHES "^(Release|MinSizeRel)$")
+if(PROJECT_IS_TOP_LEVEL AND _busybox_is_dos AND NOT CMAKE_BUILD_TYPE MATCHES "^(Release|MinSizeRel)$")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type for DOS" FORCE)
 endif()
 
-set(BUSYBOX_VERSION "1.39.0")
+option(BUSYBOX_WINDOWS_INSTALL "Generate install and CPack packaging rules" ${PROJECT_IS_TOP_LEVEL})
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
+include(FetchContent)
 
 # -----------------------------------------------------------------------------
 # Upstream BusyBox Source Location Discovery
@@ -40,14 +46,14 @@ if(NOT DEFINED BUSYBOX_SOURCE_DIR)
         set(BUSYBOX_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/busybox")
     endif()
 endif()
-get_filename_component(BUSYBOX_SOURCE_DIR "${BUSYBOX_SOURCE_DIR}" ABSOLUTE)
+cmake_path(SET BUSYBOX_SOURCE_DIR NORMALIZE "${BUSYBOX_SOURCE_DIR}")
+cmake_path(ABSOLUTE_PATH BUSYBOX_SOURCE_DIR BASE_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" NORMALIZE)
 
 if(NOT EXISTS "${BUSYBOX_SOURCE_DIR}/include/busybox.h")
-    include(FetchContent)
     FetchContent_Declare(
         busybox_upstream
         GIT_REPOSITORY https://git.busybox.net/busybox
-        GIT_TAG e6302b2711d851bfb17eaf9316514c9d0a806cc7
+        GIT_TAG        e6302b2711d851bfb17eaf9316514c9d0a806cc7
     )
     FetchContent_MakeAvailable(busybox_upstream)
     set(BUSYBOX_SOURCE_DIR "${busybox_upstream_SOURCE_DIR}")
@@ -72,15 +78,11 @@ endif()
 # -----------------------------------------------------------------------------
 # auto-win-msvc Compatibility Layer Discovery
 # -----------------------------------------------------------------------------
-include(CTest)
-include(FetchContent)
-set(_saved_build_shared_libs "${BUILD_SHARED_LIBS}")
-set(_saved_build_testing "${BUILD_TESTING}")
-set(BUILD_SHARED_LIBS OFF)
-set(BUILD_TESTING OFF)
-set(AUTO_WIN_MSVC_BUILD_TESTING OFF)
+function(_busybox_fetch_auto_win_msvc)
+    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_TESTING OFF)
+    set(AUTO_WIN_MSVC_BUILD_TESTING OFF)
 
-if(NOT TARGET auto-win-msvc)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/auto-win-msvc/CMakeLists.txt")
         set(_default_awm_dir "${CMAKE_CURRENT_SOURCE_DIR}/auto-win-msvc")
     elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../auto-win-msvc/CMakeLists.txt")
@@ -101,10 +103,12 @@ if(NOT TARGET auto-win-msvc)
         GIT_TAG        master
     )
     FetchContent_MakeAvailable(auto_win_msvc)
-endif()
+    set(auto_win_msvc_SOURCE_DIR "${auto_win_msvc_SOURCE_DIR}" PARENT_SCOPE)
+endfunction()
 
-set(BUILD_SHARED_LIBS "${_saved_build_shared_libs}")
-set(BUILD_TESTING "${_saved_build_testing}")
+if(NOT TARGET auto-win-msvc)
+    _busybox_fetch_auto_win_msvc()
+endif()
 
 # -----------------------------------------------------------------------------
 # Generated Headers in CMAKE_CURRENT_BINARY_DIR/include
@@ -446,50 +450,66 @@ set(BUSYBOX_CORE_SOURCES
 )
 
 # -----------------------------------------------------------------------------
-# Optional MSVC Source Transformation (VLAs and C89/MSVC compatibility)
+# Optional MSVC/Watcom Source Transformation (VLAs and C89 compatibility)
 # -----------------------------------------------------------------------------
-if(EXISTS "${auto_win_msvc_SOURCE_DIR}/cmake/AutoWinMsvcTransform.cmake")
-    include("${auto_win_msvc_SOURCE_DIR}/cmake/AutoWinMsvcTransform.cmake")
-elseif(EXISTS "${auto-win-msvc_SOURCE_DIR}/cmake/AutoWinMsvcTransform.cmake")
-    include("${auto-win-msvc_SOURCE_DIR}/cmake/AutoWinMsvcTransform.cmake")
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/auto-win-msvc/cmake/AutoWinMsvcTransform.cmake")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/auto-win-msvc/cmake/AutoWinMsvcTransform.cmake")
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../auto-win-msvc/cmake/AutoWinMsvcTransform.cmake")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/../auto-win-msvc/cmake/AutoWinMsvcTransform.cmake")
-endif()
-
-if(COMMAND auto_win_msvc_transform_sources AND (MSVC OR WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS"))
-    auto_win_msvc_transform_sources(
-        OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/src_gen"
-        OUTPUT_VAR BUSYBOX_CORE_SOURCES
-        SOURCES ${BUSYBOX_CORE_SOURCES}
+set(_busybox_transformed_include_dirs)
+if(MSVC OR _busybox_is_dos)
+    foreach(_awm_candidate IN ITEMS
+        "${auto_win_msvc_SOURCE_DIR}"
+        "${auto-win-msvc_SOURCE_DIR}"
+        "${FETCHCONTENT_SOURCE_DIR_AUTO_WIN_MSVC}"
+        "${FETCHCONTENT_SOURCE_DIR_AUTO-WIN-MSVC}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/auto-win-msvc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../auto-win-msvc"
     )
+        if(_awm_candidate AND EXISTS "${_awm_candidate}/cmake/AutoWinMsvcTransform.cmake")
+            include("${_awm_candidate}/cmake/AutoWinMsvcTransform.cmake")
+            break()
+        endif()
+    endforeach()
+
+    if(COMMAND auto_win_msvc_transform_sources)
+        get_property(_busybox_prev_dir_includes DIRECTORY PROPERTY INCLUDE_DIRECTORIES)
+        auto_win_msvc_transform_sources(
+            OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/src_gen"
+            OUTPUT_VAR BUSYBOX_CORE_SOURCES
+            SOURCES ${BUSYBOX_CORE_SOURCES}
+        )
+        set_property(DIRECTORY PROPERTY INCLUDE_DIRECTORIES "${_busybox_prev_dir_includes}")
+        unset(_busybox_prev_dir_includes)
+        set(_busybox_transformed_include_dirs
+            "${CMAKE_CURRENT_BINARY_DIR}/src_gen/include"
+            "${CMAKE_CURRENT_BINARY_DIR}/src_gen"
+        )
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
 # Target: busybox executable
 # -----------------------------------------------------------------------------
-list(LENGTH BUSYBOX_CORE_SOURCES _busybox_src_count)
-message(STATUS "BUSYBOX_CORE_SOURCES count: ${_busybox_src_count}")
+add_executable(busybox)
+add_executable(busybox-windows::busybox ALIAS busybox)
 
-add_executable(busybox ${BUSYBOX_CORE_SOURCES} ${BUSYBOX_GENERATED_HEADERS})
+target_sources(busybox PRIVATE
+    ${BUSYBOX_CORE_SOURCES}
+    ${BUSYBOX_GENERATED_HEADERS}
+)
 add_dependencies(busybox busybox_generated_headers)
+
+if("c_std_99" IN_LIST CMAKE_C_COMPILE_FEATURES)
+    target_compile_features(busybox PRIVATE c_std_99)
+endif()
+if(NOT _busybox_is_dos)
+    set_target_properties(busybox PROPERTIES
+        C_STANDARD 99
+        C_STANDARD_REQUIRED ON
+    )
+endif()
 
 target_include_directories(busybox PRIVATE
     "${BUSYBOX_GEN_INC}"
-    "${CMAKE_CURRENT_BINARY_DIR}/src_gen"
+    ${_busybox_transformed_include_dirs}
     "${BUSYBOX_SOURCE_DIR}/include"
-    "${BUSYBOX_SOURCE_DIR}/libbb"
-    "${BUSYBOX_SOURCE_DIR}/coreutils"
-    "${BUSYBOX_SOURCE_DIR}/coreutils/libcoreutils"
-    "${BUSYBOX_SOURCE_DIR}/archival"
-    "${BUSYBOX_SOURCE_DIR}/archival/libarchive"
-    "${BUSYBOX_SOURCE_DIR}/editors"
-    "${BUSYBOX_SOURCE_DIR}/findutils"
-    "${BUSYBOX_SOURCE_DIR}/procps"
-    "${BUSYBOX_SOURCE_DIR}/miscutils"
-    "${BUSYBOX_SOURCE_DIR}/console-tools"
-    "${BUSYBOX_SOURCE_DIR}/networking"
 )
 
 if(MSVC)
@@ -497,7 +517,7 @@ if(MSVC)
         "/FIauto-win-msvc-configure.h"
         "/FIautoconf.h"
     )
-elseif(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+elseif(_busybox_is_dos)
     target_compile_options(busybox PRIVATE
         "-bt=dos"
         "-mf"
@@ -506,33 +526,43 @@ elseif(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQ
         "-zm"
         "-ze"
         "-za99"
-        "-fi=${CMAKE_CURRENT_BINARY_DIR}/posix_includes/auto-win-msvc-configure.h"
-        "-fi=${BUSYBOX_GEN_INC}/autoconf.h"
+        "$<$<CONFIG:Debug>:-s;-os;-d0>"
+        "-fi=auto-win-msvc-configure.h"
+        "-fi=autoconf.h"
     )
     target_link_options(busybox PRIVATE "OPT" "STACK=524288")
 else()
     target_compile_options(busybox PRIVATE
+        "-fno-strict-aliasing"
+        "$<$<CONFIG:Release>:-Os>"
         "SHELL:-include auto-win-msvc-configure.h"
-        "SHELL:-include ${BUSYBOX_GEN_INC}/autoconf.h"
+        "SHELL:-include autoconf.h"
     )
 endif()
 
-if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+target_compile_definitions(busybox PRIVATE _GNU_SOURCE=1)
+if(_busybox_is_dos)
     target_compile_definitions(busybox PRIVATE
-        _GNU_SOURCE=1
         _OW_STRNLEN_MACRO_DEFINED=1
         _OPENWATCOM_STRNLEN_DEFINED=1
     )
     if(TARGET auto-win-msvc)
-        target_compile_definitions(auto-win-msvc PRIVATE
-            _OW_STRNLEN_MACRO_DEFINED=1
-            _OPENWATCOM_STRNLEN_DEFINED=1
-        )
+        get_target_property(_awm_aliased auto-win-msvc ALIASED_TARGET)
+        if(_awm_aliased)
+            target_compile_definitions("${_awm_aliased}" PRIVATE
+                _OW_STRNLEN_MACRO_DEFINED=1
+                _OPENWATCOM_STRNLEN_DEFINED=1
+            )
+        else()
+            target_compile_definitions(auto-win-msvc PRIVATE
+                _OW_STRNLEN_MACRO_DEFINED=1
+                _OPENWATCOM_STRNLEN_DEFINED=1
+            )
+        endif()
     endif()
 else()
     target_compile_definitions(busybox PRIVATE
-        _GNU_SOURCE=1
-        BB_VER="${BUSYBOX_VERSION}"
+        BB_VER="${PROJECT_VERSION}"
         AUTOCONF_TIMESTAMP=""
     )
 endif()
@@ -542,76 +572,95 @@ if(TARGET auto-win-msvc)
 endif()
 
 if(UNIX)
-    find_library(MATH_LIBRARY m)
-    if(MATH_LIBRARY)
-        target_link_libraries(busybox PRIVATE "${MATH_LIBRARY}")
+    find_library(BUSYBOX_MATH_LIBRARY m)
+    mark_as_advanced(BUSYBOX_MATH_LIBRARY)
+    if(BUSYBOX_MATH_LIBRARY)
+        target_link_libraries(busybox PRIVATE "${BUSYBOX_MATH_LIBRARY}")
     endif()
 endif()
 
 if(UNIX AND NOT LINUX)
-    find_library(RESOLV_LIBRARY resolv)
-    if(RESOLV_LIBRARY)
-        target_link_libraries(busybox PRIVATE "${RESOLV_LIBRARY}")
+    find_library(BUSYBOX_RESOLV_LIBRARY resolv)
+    mark_as_advanced(BUSYBOX_RESOLV_LIBRARY)
+    if(BUSYBOX_RESOLV_LIBRARY)
+        target_link_libraries(busybox PRIVATE "${BUSYBOX_RESOLV_LIBRARY}")
     endif()
 endif()
 
 # -----------------------------------------------------------------------------
 # OpenWatcom DOS Extender Staging (dos32a.exe / dos4gw.exe)
 # -----------------------------------------------------------------------------
-if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+if(_busybox_is_dos)
     set(_watcom_env "$ENV{WATCOM}")
     if(NOT _watcom_env AND DEFINED WATCOM_ROOT)
         set(_watcom_env "${WATCOM_ROOT}")
     endif()
     if(_watcom_env)
-        foreach(_extender dos4gw.exe dos32a.exe)
+        foreach(_extender IN ITEMS dos4gw.exe dos32a.exe)
             if(EXISTS "${_watcom_env}/binw/${_extender}")
-                file(COPY "${_watcom_env}/binw/${_extender}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
-                install(FILES "${_watcom_env}/binw/${_extender}" DESTINATION bin)
+                add_custom_command(
+                    TARGET busybox POST_BUILD
+                    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                            "${_watcom_env}/binw/${_extender}"
+                            "$<TARGET_FILE_DIR:busybox>/${_extender}"
+                    VERBATIM
+                )
             endif()
         endforeach()
     endif()
 endif()
 
 # -----------------------------------------------------------------------------
-# Installation Rules
+# Installation & Packaging Rules
 # -----------------------------------------------------------------------------
-install(TARGETS busybox RUNTIME DESTINATION bin)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION .)
-endif()
-if(EXISTS "${BUSYBOX_SOURCE_DIR}/LICENSE")
-    install(FILES "${BUSYBOX_SOURCE_DIR}/LICENSE" DESTINATION . RENAME "LICENSE-GPL-2.0.txt")
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-CC0")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-CC0" DESTINATION .)
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-APACHE")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-APACHE" DESTINATION .)
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-MIT")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE-MIT" DESTINATION .)
-endif()
+if(BUSYBOX_WINDOWS_INSTALL)
+    include(GNUInstallDirs)
 
-# -----------------------------------------------------------------------------
-# Packaging via CPack
-# -----------------------------------------------------------------------------
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CPackConfig.cmake")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/CPackConfig.cmake")
+    install(TARGETS busybox RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+    if(_busybox_is_dos AND _watcom_env)
+        foreach(_extender IN ITEMS dos4gw.exe dos32a.exe)
+            if(EXISTS "${_watcom_env}/binw/${_extender}")
+                install(FILES "${_watcom_env}/binw/${_extender}" DESTINATION "${CMAKE_INSTALL_BINDIR}")
+            endif()
+        endforeach()
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/README.md" DESTINATION .)
+    endif()
+    if(EXISTS "${BUSYBOX_SOURCE_DIR}/LICENSE")
+        install(FILES "${BUSYBOX_SOURCE_DIR}/LICENSE" DESTINATION . RENAME "LICENSE-GPL-2.0.txt")
+    endif()
+    foreach(_lic_file IN ITEMS LICENSE-CC0 LICENSE-APACHE LICENSE-MIT)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_lic_file}")
+            install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_lic_file}" DESTINATION .)
+        endif()
+    endforeach()
+
+    if(PROJECT_IS_TOP_LEVEL)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CPackConfig.cmake")
+            include("${CMAKE_CURRENT_SOURCE_DIR}/CPackConfig.cmake")
+        endif()
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CPackSourceConfig.cmake")
+            include("${CMAKE_CURRENT_SOURCE_DIR}/CPackSourceConfig.cmake")
+        endif()
+        include(CPack)
+    endif()
 endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CPackSourceConfig.cmake")
-    include("${CMAKE_CURRENT_SOURCE_DIR}/CPackSourceConfig.cmake")
-endif()
-include(CPack)
 
 # -----------------------------------------------------------------------------
 # Testing via CTest
 # -----------------------------------------------------------------------------
-include(CTest)
-if(BUILD_TESTING)
+if(PROJECT_IS_TOP_LEVEL)
+    include(CTest)
+endif()
+option(BUSYBOX_WINDOWS_BUILD_TESTING "Enable BusyBox functional CTest suite" ${PROJECT_IS_TOP_LEVEL})
+
+if((NOT PROJECT_IS_TOP_LEVEL OR BUILD_TESTING) AND BUSYBOX_WINDOWS_BUILD_TESTING)
     enable_testing()
 
-    if(WATCOM OR CMAKE_C_COMPILER_ID MATCHES "Watcom" OR CMAKE_SYSTEM_NAME STREQUAL "DOS")
+    if(_busybox_is_dos)
         # DOS Protected-Mode CTest smoke suite (compatible with MS-DOS 1.25/2.0/4.0 COMMAND.COM)
         add_test(NAME test_busybox_echo COMMAND busybox echo "BusyBox DOS build successful")
         set_tests_properties(test_busybox_echo PROPERTIES PASS_REGULAR_EXPRESSION "BusyBox DOS build successful")
@@ -701,6 +750,7 @@ if(BUILD_TESTING)
                 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
                         "$<TARGET_FILE:busybox>" --suite procps
             )
+            set_tests_properties(test_suite_procps_and_shell PROPERTIES RUN_SERIAL TRUE)
             add_test(
                 NAME test_suite_networking
                 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_applet_test.py"
